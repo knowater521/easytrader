@@ -3,8 +3,10 @@ from __future__ import division
 
 import datetime
 import json
+import os
 import re
 import ssl
+import sys
 import uuid
 
 import requests
@@ -12,8 +14,8 @@ import six
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.poolmanager import PoolManager
 from six.moves import input
-
 from . import exceptions
+from .log import log
 
 if six.PY2:
     from io import open
@@ -90,9 +92,17 @@ def recognize_verify_code(image_path, broker='ht'):
     :param broker: 券商 ['ht', 'yjb', 'gf', 'yh']
     :return recognized: verify code string"""
 
-    if broker == 'gf':
+    if broker == 'ht':
+        return detect_ht_result(image_path)
+    elif broker == 'yjb':
+        return detect_yjb_result(image_path)
+    elif broker == 'gf':
         return detect_gf_result(image_path)
-    elif broker in ['yh_client', 'gj_client']:
+    elif broker in ['yh_client', 'gj_client', 'yh']:
+        return detect_yh_result(image_path)
+    elif broker == 'xczq':
+        return default_verify_code_detect(image_path)
+    elif broker == 'yh_client':
         return detect_yh_client_result(image_path)
     # 调用 tesseract 识别
     return default_verify_code_detect(image_path)
@@ -116,6 +126,37 @@ def input_verify_code_manual(image_path):
     code = input(
         'image path: {}, input verify code answer:'.format(image_path))
     return code
+
+
+def detect_verify_code_by_java(image_path, broker):
+    jars = {
+        'ht': ('getcode_jdk1.5.jar', ''),
+        'yjb': ('yjb_verify_code.jar', 'guojin')
+    }
+    verify_code_tool, param = jars[broker]
+    # 检查 java 环境，若有则调用 jar 包处理 (感谢空中园的贡献)
+    # noinspection PyGlobalUndefined
+    if six.PY2:
+        if sys.platform == 'win32':
+            from subprocess import PIPE, Popen, STDOUT
+
+            def getoutput(cmd, input=None, cwd=None, env=None):
+                pipe = Popen(cmd, shell=True, cwd=cwd, env=env, stdout=PIPE, stderr=STDOUT)
+                (output, err_out) = pipe.communicate(input=input)
+                return output.decode().rstrip('\r\n')
+        else:
+            import commands
+            getoutput = commands.getoutput
+    else:
+        from subprocess import getoutput
+    out_put = getoutput('java -version')
+    log.debug('java detect result: %s' % out_put)
+    if out_put.find('java version') != -1 or out_put.find('openjdk') != -1:
+        tool_path = os.path.join(os.path.dirname(__file__), 'thirdlibrary', verify_code_tool)
+        out_put = getoutput('java -jar "{}" {} {}'.format(tool_path, param, image_path))
+        log.debug('recognize output: %s' % out_put)
+        verify_code_start = -4
+        return out_put[verify_code_start:]
 
 
 def default_verify_code_detect(image_path):
@@ -142,6 +183,22 @@ def detect_gf_result(image_path):
     for _ in range(2):
         med_res = med_res.filter(ImageFilter.MedianFilter)
     return invoke_tesseract_to_recognize(med_res)
+
+
+def detect_yh_result(image_path):
+    """封装了tesseract的中文识别，部署在阿里云上，服务端源码地址为： https://github.com/shidenggui/yh_verify_code_docker"""
+    api = 'http://123.56.157.162:5000/yh'
+    with open(image_path, 'rb') as f:
+        try:
+            rep = requests.post(api, files={
+                'image': f
+            })
+            if rep.status_code != 200:
+                raise Exception('request {} error'.format(api))
+        except Exception as e:
+            log.error('自动识别银河验证码失败: {}, 请手动输入验证码'.format(e))
+            return input_verify_code_manual(image_path)
+    return rep.text
 
 
 def invoke_tesseract_to_recognize(img):
