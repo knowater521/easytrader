@@ -33,7 +33,8 @@
 * 广发
 * 银河客户端(支持自动登陆), 须在 `windows` 平台下载 `银河双子星` 客户端
 * 湘财证券
-
+* 华泰证券
+ 
 ### 模拟交易
 
 * 雪球组合 by @[haogefeifei](https://github.com/haogefeifei)（[说明](doc/xueqiu.md)）
