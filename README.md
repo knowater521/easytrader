@@ -17,7 +17,6 @@
 
 ![微信](http://7xqo8v.com1.z0.glb.clouddn.com/wx.png?imageView2/1/w/300/h/300)             ![支付宝](http://7xqo8v.com1.z0.glb.clouddn.com/zhifubao2.png?imageView2/1/w/300/h/300)
 
-
 ## 公众号
 
 扫码关注“易量化”的微信公众号，不定时更新一些个人文章及与大家交流
@@ -33,7 +32,7 @@
 
 [简单的股票量化交易框架 使用 easytrader 和 easyquotation](https://github.com/shidenggui/easyquant)
 
-### 支持券商
+### 支持券商（同花顺内核）
 
 * 银河客户端, 须在 `windows` 平台下载 `银河双子星` 客户端
 * 华泰客户端(网上交易系统（专业版Ⅱ）)
@@ -51,7 +50,8 @@
 * 银河客户端(支持自动登陆), 须在 `windows` 平台下载 `银河双子星` 客户端
 * 湘财证券
 * 华泰证券
- 
+* 广州证券
+
 ### 模拟交易
 
 * 雪球组合 by @[haogefeifei](https://github.com/haogefeifei)（[说明](doc/xueqiu.md)）
