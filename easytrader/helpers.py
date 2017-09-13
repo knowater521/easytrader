@@ -1,6 +1,7 @@
 # coding: utf-8
 from __future__ import division
-
+import win32gui
+import win32con
 import datetime
 import json
 import os
@@ -8,7 +9,7 @@ import re
 import ssl
 import sys
 import uuid
-
+import array
 import requests
 import six
 from requests.adapters import HTTPAdapter
@@ -269,3 +270,32 @@ def get_today_ipo_data():
             })
 
     return today_ipo
+
+
+def get_text_by_hwnd(hwnd, buffer_len=100, cast=None):
+    """
+    根据 hwnd 获取窗口中的字符串
+    :param hwnd: 
+    :param buffer_len: 
+    :param cast: 是否进行类型转换，默认None不进行转换，float, int 可以继续对应类型转换
+    :return: 
+    """
+    # buffer = win32gui.PyMakeBuffer(buffer_len)
+    buffer = win32gui.PyGetMemory(*array.array('b',bytearray(buffer_len)).buffer_info())
+    length = win32gui.SendMessage(hwnd, win32con.WM_GETTEXT, buffer_len, buffer)
+    char_list_len = length * 2 if length * 2 < buffer_len else buffer_len
+    # aaa = [chr(buf) for buf in buffer[:char_list_len] if buf != 0]
+    char_list = []
+    for n_buf, a_byte in enumerate(buffer[:char_list_len]):
+        if n_buf % 2 != 0:
+            continue
+        if a_byte == 0:
+            break
+        char_list.append(chr(a_byte))
+        # print(buf, chr(buf))
+    ret_str = ''.join(char_list)
+    if cast is not None:
+        ret_data = cast(ret_str)
+    else:
+        ret_data = ret_str
+    return ret_data
