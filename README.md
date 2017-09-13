@@ -7,13 +7,6 @@
 * 支持命令行调用，方便其他语言适配
 * 支持 Python3 / Python2, Linux / Win, 推荐使用 `Python3`
 
-## 公众号
-
-请扫码关注“易量化”的微信公众号，不定时更新`easytrader`的最新动态及量化方面的相关文章
-
-![](https://raw.githubusercontent.com/shidenggui/assets/master/easytrader/easy_quant_qrcode.jpg)
-
-
 **开发环境** : `Ubuntu 16.04` / `Python 3.5`
 
 ### 相关
@@ -31,8 +24,9 @@
 * 广发
 * 银河客户端(支持自动登陆), 须在 `windows` 平台下载 `银河双子星` 客户端
 * 湘财证券
+* 华泰证券
 * 广州证券
-
+ 
 ### 模拟交易
 
 * 雪球组合 by @[haogefeifei](https://github.com/haogefeifei)（[说明](doc/xueqiu.md)）
