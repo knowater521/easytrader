@@ -15,7 +15,7 @@ import six
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.poolmanager import PoolManager
 from six.moves import input
-
+import numpy as np
 from .log import log
 
 if six.PY2:
@@ -272,7 +272,7 @@ def get_today_ipo_data():
     return today_ipo
 
 
-def get_text_by_hwnd(hwnd, buffer_len=100, cast=None):
+def get_text_by_hwnd(hwnd, buffer_len=64, cast=None):
     """
     根据 hwnd 获取窗口中的字符串
     :param hwnd: 
@@ -280,8 +280,8 @@ def get_text_by_hwnd(hwnd, buffer_len=100, cast=None):
     :param cast: 是否进行类型转换，默认None不进行转换，float, int 可以继续对应类型转换
     :return: 
     """
-    # buffer = win32gui.PyMakeBuffer(buffer_len)
-    buffer = win32gui.PyGetMemory(*array.array('b',bytearray(buffer_len)).buffer_info())
+    buffer = win32gui.PyMakeBuffer(buffer_len)
+    # buffer = win32gui.PyGetMemory(*array.array('b',bytearray(buffer_len)).buffer_info())
     length = win32gui.SendMessage(hwnd, win32con.WM_GETTEXT, buffer_len, buffer)
     char_list_len = length * 2 if length * 2 < buffer_len else buffer_len
     # aaa = [chr(buf) for buf in buffer[:char_list_len] if buf != 0]
@@ -295,7 +295,10 @@ def get_text_by_hwnd(hwnd, buffer_len=100, cast=None):
         # print(buf, chr(buf))
     ret_str = ''.join(char_list)
     if cast is not None:
-        ret_data = cast(ret_str)
+        if ret_str == '-':
+            ret_data = np.nan
+        else:
+            ret_data = cast(ret_str)
     else:
         ret_data = ret_str
     return ret_data
