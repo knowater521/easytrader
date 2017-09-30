@@ -34,6 +34,7 @@ class GZZQClientTrader():
         # self.base_dir 仅用于在导出持仓信息文件时默认的保存目录
         self.base_dir = r'd:\Downloads'
         self._position_df = None
+        self._apply_df = None
         self.ignore_mini_order = 10000
 
     def prepare(self, config_path=None, user=None, password=None, exe_path='D:\TradeTools\广州证券网上交易\hexin.exe'):
@@ -232,7 +233,6 @@ class GZZQClientTrader():
         else:
             log.error('sub_win:%s 无效', sub_win)
 
-
     def _get_handles(self):
         # 同花顺有改版，无法依靠窗体名称捕获句柄
         # trade_main_hwnd = win32gui.FindWindow(0, self.Title)  # 交易窗口
@@ -336,7 +336,7 @@ class GZZQClientTrader():
             log.error("%s, buy price is nan", stock_code)
             return
         # price = str(price)
-        price_str = '%.2f' % price
+        price_str = '%.3f' % price
 
         try:
             win32gui.SendMessage(self.buy_stock_code_hwnd, win32con.WM_SETTEXT, None, stock_code)  # 输入买入代码
@@ -370,7 +370,7 @@ class GZZQClientTrader():
             log.error("%s, sell price is nan", stock_code)
             return
         # price = str(price)
-        price_str = '%.2f' % price
+        price_str = '%.3f' % price
 
         try:
             win32gui.SendMessage(self.sell_stock_code_hwnd, win32con.WM_SETTEXT, None, stock_code)  # 输入卖出代码
@@ -421,6 +421,33 @@ class GZZQClientTrader():
         return self.get_position()
 
     def get_position(self):
+        """
+        获取当前持仓信息
+        :return: 
+        """
+        position_df = self._get_csv_data(sub_win_from='deal', sub_win_to='holding')
+        if position_df is not None:
+            self._position_df = position_df
+        return self._position_df
+
+    def get_apply(self):
+        """
+        获取全部委托单信息
+        :return: 
+        """
+        apply_df = self._get_csv_data(sub_win_from='holding', sub_win_to='apply')
+        if apply_df is not None:
+            self._apply_df = apply_df
+        return self._apply_df
+
+    def _get_csv_data(self, sub_win_from, sub_win_to, fast_mode=False):
+        """
+        获取全部委托单信息
+        :param sub_win_from: 
+        :param sub_win_to: 
+        :param fast_mode: 默认为 False， 为True时，将不进行窗口切换，只有在确认无需进行窗口切换的情况下才能开启次项 
+        :return: 
+        """
         file_name = 'table.xls'
         file_path = os.path.join(self.base_dir, file_name)
         # 如果文件存在，将其删除
@@ -429,19 +456,16 @@ class GZZQClientTrader():
         win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
         time.sleep(0.1)
         # 多次尝试获取仓位
-        fast_mode = True
+        # fast_mode = True
         for try_count in range(3):
             if not fast_mode:
-                self.goto_buy_win(sub_win='deal')
+                self.goto_buy_win(sub_win=sub_win_from)
                 time.sleep(0.5)
-                self.goto_buy_win(sub_win='holding')
+                self.goto_buy_win(sub_win=sub_win_to)
                 time.sleep(0.5)
                 win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
                 time.sleep(0.2)
             shell = GZZQClientTrader._set_foreground_window(self.position_list_hwnd)
-            # time.sleep(0.1)
-            # data = self._read_clipboard()
-            # return self.project_copy_data(data)
 
             # Ctrl +s 热键保存
             shell.SendKeys('^s')
@@ -468,10 +492,8 @@ class GZZQClientTrader():
             log.warning('文件：%s 没有找到，取消fast_mode模式，重按尝试', file_path)
             fast_mode = False
 
-        position_df = GZZQClientTrader.read_position_csv(file_path)
-        if position_df is not None:
-            self._position_df = position_df
-        return self._position_df
+        data_df = GZZQClientTrader.read_position_csv(file_path)
+        return data_df
 
     @staticmethod
     def read_position_csv(file_path):
@@ -769,10 +791,14 @@ class GZZQClientTrader():
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code_str)
         # 主动成交选择买卖五档价格中的二挡买卖价格进行填报
         if direction == 1:
-            price = offer_sell_list[1][0] - SHIFT_PRICE  # 测试用价格，调整一下防止真成交
+            price = offer_sell_list[1][0]
+            price = ref_price if math.isnan(price) else price
+            price = price - SHIFT_PRICE  # 测试用价格，调整一下防止真成交
             log.debug('主动买入 %s卖2委托价格 %f', stock_code_str, price)
             self.buy(stock_code_str, price, order_vol)
         else:
-            price = offer_buy_list[1][0] + SHIFT_PRICE  # 测试用价格，调整一下防止真成交
+            price = offer_buy_list[1][0]
+            price = ref_price if math.isnan(price) else price
+            price = price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交
             log.debug('主动卖出 %s买2委托价格 %f', stock_code_str, price)
             self.sell(stock_code_str, price, abs(order_vol))
