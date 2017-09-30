@@ -55,17 +55,21 @@ def main(prepare, use, debug=False):
     # 根据输入命令执行，相应指令
     print_red = lambda x: cprint(x, 'red')
     print_green = lambda x: cprint(x, 'green')
-    print("")
-    print_red('输入 1：导入股票列表')
-    print_red('输入 2：查询目标股票列表')
-    print_red('输入 3：查询当前持仓')
-    print_red('输入 4：查询合并后交易列表')
-    print_red('输入 5：执行算法交易')
+    print("*"*10, '广发证券版 easytrader 控制台', '*'*10)
+    print('输入 0：退出')
+    print('输入 1：导入股票列表')
+    print('输入 2：查询目标股票列表')
+    print('输入 3：查询当前持仓')
+    print('输入 4：查询合并后交易列表')
+    print('输入 5：执行算法交易')
     stock_target_df = None
     while True:
         command_num = int(input("输入："))
         try:
-            if command_num == 1:
+            if command_num == 0:
+                print_green('退出')
+                break
+            elif command_num == 1:
                 print_green('导入列表')
                 stock_target_df = load_stock_order()
                 print(stock_target_df)

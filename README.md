@@ -69,6 +69,10 @@
 >- 撤单前是否需要确认：否
 >- 委托前是否需要确认：否
 >- 委托成功后是否弹出提示对话框：否
+>- 路径及其他环境变量设置
+>- gzzq_clienttrader.py 文件 SHIFT_PRICE 字段设置为 0
+>- gzzq_clienttrader.py 文件 self.base_dir = r'd:\Downloads' 设置为文件保存默认路径
+
 
 ### 模拟交易
 
