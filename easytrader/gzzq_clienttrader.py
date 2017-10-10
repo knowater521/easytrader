@@ -25,7 +25,8 @@ import win32_utils
 from mass_utils import get_min_move_unit
 
 
-SHIFT_PRICE = 0.7
+# 仅用于调试阶段，防止价格成交，进行买卖价格偏移使用
+SHIFT_PRICE = 0.0
 
 class GZZQClientTrader():
     def __init__(self):
@@ -51,6 +52,7 @@ class GZZQClientTrader():
             account = helpers.file2dict(config_path)
             user = account['user']
             password = account['password']
+            exe_path = account['exe_path'] if 'exe_path' in account else exe_path
         self.login(user, password, exe_path)
 
     def login(self, user, password, exe_path):
@@ -240,6 +242,7 @@ class GZZQClientTrader():
         trade_main_hwnd = self._find_trade_client_hwnd()  # 交易窗口
         if trade_main_hwnd is None:
             raise Exception()
+        self.close_confirm_win_if_exist()
         trade_frame_hwnd = win32gui.GetDlgItem(trade_main_hwnd, 0)  # 交易窗口
         operate_frame_hwnd = win32gui.GetDlgItem(trade_frame_hwnd, 59648)  # 操作窗口框架
         operate_frame_afx_hwnd = win32gui.GetDlgItem(operate_frame_hwnd, 59648)  # 操作窗口框架
@@ -664,10 +667,10 @@ class GZZQClientTrader():
         for idx in stock_bs_df.index:
             bs_s = stock_bs_df.ix[idx]
             wap_mode = bs_s.wap_mode
-            if wap_mode == 'twap':
+            if wap_mode in ('twap', 'twap2'):
                 self.deal_order_active(bs_s)
             else:
-                raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.stock_code, bs_s.wap_mod))
+                raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.name, bs_s.wap_mod))
 
     def reform_order(self, stock_target_df):
         """
@@ -846,10 +849,14 @@ class GZZQClientTrader():
         direction = 1 if init_position < final_position else 0
         if init_position == final_position:
             return
-        # 将小额买入卖出过滤掉，除了清仓指令
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
+        # 将小额买入卖出过滤掉，除了清仓指令
+        if gap_position == 0:
+            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return
         if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
             log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
                      stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
@@ -896,12 +903,15 @@ class GZZQClientTrader():
         final_position = bs_s.final_position
         init_position = bs_s.init_position
         direction = 1 if init_position < final_position else 0
-        if init_position == final_position:
-            return
         # 将小额买入卖出过滤掉，除了清仓指令
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
+        # 将小额买入卖出过滤掉，除了清仓指令
+        if gap_position == 0:
+            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return
         if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
             log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
                      stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
@@ -941,7 +951,7 @@ class GZZQClientTrader():
                                               target_position=target_position,
                                               limit_position=final_position)
         order_vol2, order_price2 = self.calc_order_by_price(stock_code,
-                                                    ref_price=price1,
+                                                    ref_price=price2,
                                                     direction=direction,
                                                     target_position=target_position,
                                                     limit_position=final_position)
@@ -966,7 +976,7 @@ class GZZQClientTrader():
             else:
                 order_price2 = order_price2 + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
                 # log.debug('算法卖出 %s 卖1+0.01委托价格 %f', stock_code_str, order_price2)
-                self.sell(stock_code_str, order_price2, order_vol2, remark="算法卖出 卖1+%.3f" % min_move)
+                self.sell(stock_code_str, order_price2, order_vol2, remark="算法卖出 卖1-%.3f" % min_move)
             config[key_price2_last_period] = order_price2
 
     def deal_order_active(self, bs_s):
@@ -979,11 +989,15 @@ class GZZQClientTrader():
         stock_code_str = '%06d' % stock_code
         final_position = bs_s.final_position
         init_position = bs_s.init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
+        direction = 1 if init_position < final_position else 0
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        direction = 1 if init_position < final_position else 0
+        # 将小额买入卖出过滤掉，除了清仓指令
+        if gap_position == 0:
+            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return
         if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
             log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
                      stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
