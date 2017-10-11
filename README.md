@@ -11,8 +11,6 @@
 
 ### 相关
 
-[量化交流论坛](http://www.celuetan.com)
-
 [获取新浪免费实时行情的类库: easyquotation](https://github.com/shidenggui/easyquotation)
 
 [简单的股票量化交易框架 使用 easytrader 和 easyquotation](https://github.com/shidenggui/easyquant)
@@ -50,6 +48,10 @@
 
 
  
+### 实盘易
+
+如果有对其他券商或者通达信版本的需求，可以查看 [实盘易](http://6du.in/0s15Iru)
+
 ### 模拟交易
 
 * 雪球组合 by @[haogefeifei](https://github.com/haogefeifei)（[说明](doc/xueqiu.md)）
