@@ -127,7 +127,7 @@ def main(config_path, use, debug=False):
             logger.exception('table')
 
 if __name__ == "__main__":
-    main(config_path="gzzq.json", use="gzzq")
+    main(config_path="json/gzzq.json", use="gzzq")
     # 测试文件导入
     # data_df = load_stock_order()
     # print(data_df)
