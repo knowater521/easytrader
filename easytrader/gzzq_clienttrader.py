@@ -53,6 +53,7 @@ class GZZQClientTrader():
             user = account['user']
             password = account['password']
             exe_path = account['exe_path'] if 'exe_path' in account else exe_path
+            self.base_dir = account['base_dir'] if 'base_dir' in account else self.base_dir
         self.login(user, password, exe_path)
 
     def login(self, user, password, exe_path):
@@ -205,28 +206,6 @@ class GZZQClientTrader():
         else:
             ret_hwnd = None
         return ret_hwnd
-
-    # @staticmethod
-    # def _filter_confirm_win_func(hwnd):
-    #     """ 查找 标题为“提示”的确认框"""
-    #     # 找到classname = '#32770' 的窗体
-    #     re_classname_pattern = '#32770'
-    #     clsname = win32gui.GetClassName(hwnd)
-    #     if re.match(re_classname_pattern, clsname) is None:
-    #         return False
-    #     # 找到 窗体标题为 “提示”的窗体
-    #     hwnd_chld_list = []
-    #     try:
-    #         win32gui.EnumChildWindows(hwnd, lambda hwnd_sub, hwnd_chld_list_tmp: hwnd_chld_list_tmp.append(hwnd_sub),
-    #                                   hwnd_chld_list)
-    #         for hwnd_sub in hwnd_chld_list:
-    #             if win32gui.GetClassName(hwnd_sub) == 'Static' and win32gui.GetWindowText(hwnd_sub) == '提示':
-    #                 return True
-    #     except:
-    #         pass
-    #     return False
-
-
 
     def close_confirm_win_if_exist(self):
         """ 查找 标题为“提示”的确认框"""
@@ -680,7 +659,8 @@ class GZZQClientTrader():
             raise ValueError("'datetime_end' or 'timedelta_tot' 至少有一个需要在config中配置")
 
         stock_bs_df = self.reform_order(stock_target_df)
-        stock_bs_df.sort_values(by='direction', inplace=True)
+        stock_bs_df = self.sort_order(stock_bs_df)
+
         # 跳转到买入窗口
         self.goto_buy_win()
         # 开始循环执行算法交易
@@ -706,6 +686,26 @@ class GZZQClientTrader():
                 self.deal_order_active(bs_s)
             else:
                 raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.name, bs_s.wap_mod))
+
+    def sort_order(self, stock_bs_df):
+        """
+        对order进行排序
+        按照先卖后买，穿插组合
+        :param stock_bs_df: 
+        :return: 
+        """
+        # stock_bs_df.sort_values(by='direction', inplace=True)
+        buy_first = True if self.get_available_amount() > 20000 else False
+        stock_bs_df['orderbyvalue'] = 0
+        stock_bs_dfg = stock_bs_df.groupby('direction')
+        for direction in stock_bs_dfg.groups:
+            stock_bs_df_sub = stock_bs_dfg.get_group(direction)
+            for n, idx in zip(range(stock_bs_df_sub.shape[0]), stock_bs_df_sub.index):
+                stock_bs_df['orderbyvalue'][idx] = n + (-0.5 if buy_first and direction == 1 else 0.5)
+        stock_bs_df.sort_values(by='orderbyvalue', inplace=True)
+        stock_bs_df.drop('orderbyvalue', axis=1, inplace=True)
+        # stock_bs_df['orderbyvalue'] = stock_bs_df['direction'].apply(lambda x: orderbyvalue_0++ if x == 0 else orderbyvalue_1++)
+        return stock_bs_df
 
     def reform_order(self, stock_target_df):
         """
