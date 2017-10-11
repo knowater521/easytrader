@@ -7,7 +7,7 @@ import click
 import easytrader
 from termcolor import cprint
 import os
-from datetime import datetime
+from datetime import datetime, time
 import logging
 import pandas as pd
 
@@ -114,6 +114,9 @@ def main(config_path, use, debug=False):
                     datetime_start = datetime.now() if datetime_start is None else datetime_start
                     print_green('执行算法交易 开始')
                     config = {'timedelta_tot': timedelta_tot, 'datetime_start': datetime_start, 'interval': 10}
+                    print_green('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
+                    while datetime_start > datetime.now():
+                        time.sleep(1)
                     user.auto_order(stock_target_df, config)
                     print_green('执行算法交易 结束')
                 else:
