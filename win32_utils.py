@@ -47,8 +47,29 @@ def find_window_whnd(filter_func, ret_first=True):
         return None
 
 
+def filter_hwnd_func(hwnd, contain_window_text):
+    """ 查找 内部包含“contain_window_text”标签的框体"""
+    try:
+        # 找到classname = '#32770' 的窗体
+        re_classname_pattern = '#32770'
+        clsname = win32gui.GetClassName(hwnd)
+        if re.match(re_classname_pattern, clsname) is None:
+            return False
+        # 查找 内部包含“可用金额”标签的框体
+        hwnd_chld_list = []
+        win32gui.EnumChildWindows(hwnd, lambda hwnd_sub, hwnd_chld_list_tmp: hwnd_chld_list_tmp.append(hwnd_sub),
+                                  hwnd_chld_list)
+        for hwnd_sub in hwnd_chld_list:
+            if win32gui.GetClassName(hwnd_sub) == 'Static' and win32gui.GetWindowText(hwnd_sub) == contain_window_text:
+                return True
+    except:
+        pass
+    return False
+
+
 if __name__ == "__main__":
     # hwnd_list = find_window_whnd(filter_func, ret_first=False)
     # print([(hwnd, hex(hwnd)) for hwnd in hwnd_list])
-    hwnd = find_window_whnd(filter_confirm_win_func, ret_first=True)
+    # hwnd = find_window_whnd(filter_confirm_win_func, ret_first=True)
+    hwnd = find_window_whnd(lambda x: filter_hwnd_func(x, '提示'), ret_first=True)
     print("hwnd:%d [%s]" % (hwnd, hex(hwnd)))

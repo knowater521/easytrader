@@ -21,7 +21,7 @@ from PIL import ImageGrab
 import pythoncom
 from . import helpers
 from .log import log
-import win32_utils
+from win32_utils import find_window_whnd, filter_hwnd_func
 from mass_utils import get_min_move_unit
 
 
@@ -194,28 +194,44 @@ class GZZQClientTrader():
         return offer_frame_hwnd
 
     @staticmethod
-    def _filter_confirm_win_func(hwnd):
-        """ 查找 标题为“提示”的确认框"""
-        # 找到classname = '#32770' 的窗体
-        re_classname_pattern = '#32770'
-        clsname = win32gui.GetClassName(hwnd)
-        if re.match(re_classname_pattern, clsname) is None:
-            return False
-        # 找到 窗体标题为 “提示”的窗体
-        hwnd_chld_list = []
-        try:
-            win32gui.EnumChildWindows(hwnd, lambda hwnd_sub, hwnd_chld_list_tmp: hwnd_chld_list_tmp.append(hwnd_sub),
-                                      hwnd_chld_list)
-            for hwnd_sub in hwnd_chld_list:
-                if win32gui.GetClassName(hwnd_sub) == 'Static' and win32gui.GetWindowText(hwnd_sub) == '提示':
-                    return True
-        except:
-            pass
-        return False
+    def _find_capital_frame_hwnd(capital_window_hwnd):
+        """根据 capital_window_hwnd 查找可用资金、冻结资金、股票市值、总资产相关控件的母控件"""
+        hWndChildList = []
+        win32gui.EnumChildWindows(capital_window_hwnd, lambda hwnd, hwnd_list: hwnd_list.append(hwnd), hWndChildList)
+        for hwnd in hWndChildList:
+            if filter_hwnd_func(hwnd, '可用金额'):
+                ret_hwnd = hwnd
+                break
+        else:
+            ret_hwnd = None
+        return ret_hwnd
+
+    # @staticmethod
+    # def _filter_confirm_win_func(hwnd):
+    #     """ 查找 标题为“提示”的确认框"""
+    #     # 找到classname = '#32770' 的窗体
+    #     re_classname_pattern = '#32770'
+    #     clsname = win32gui.GetClassName(hwnd)
+    #     if re.match(re_classname_pattern, clsname) is None:
+    #         return False
+    #     # 找到 窗体标题为 “提示”的窗体
+    #     hwnd_chld_list = []
+    #     try:
+    #         win32gui.EnumChildWindows(hwnd, lambda hwnd_sub, hwnd_chld_list_tmp: hwnd_chld_list_tmp.append(hwnd_sub),
+    #                                   hwnd_chld_list)
+    #         for hwnd_sub in hwnd_chld_list:
+    #             if win32gui.GetClassName(hwnd_sub) == 'Static' and win32gui.GetWindowText(hwnd_sub) == '提示':
+    #                 return True
+    #     except:
+    #         pass
+    #     return False
+
+
 
     def close_confirm_win_if_exist(self):
         """ 查找 标题为“提示”的确认框"""
-        hwnd = win32_utils.find_window_whnd(GZZQClientTrader._filter_confirm_win_func, ret_first=True)
+        # hwnd = win32_utils.find_window_whnd(GZZQClientTrader._filter_confirm_win_func, ret_first=True)
+        hwnd = find_window_whnd(lambda x: filter_hwnd_func(x, '提示'), ret_first=True)
         if hwnd is not None:
             shell = GZZQClientTrader._set_foreground_window(hwnd)
             # Enter 热键 切断
@@ -242,7 +258,6 @@ class GZZQClientTrader():
         trade_main_hwnd = self._find_trade_client_hwnd()  # 交易窗口
         if trade_main_hwnd is None:
             raise Exception()
-        self.close_confirm_win_if_exist()
         trade_frame_hwnd = win32gui.GetDlgItem(trade_main_hwnd, 0)  # 交易窗口
         operate_frame_hwnd = win32gui.GetDlgItem(trade_frame_hwnd, 59648)  # 操作窗口框架
         operate_frame_afx_hwnd = win32gui.GetDlgItem(operate_frame_hwnd, 59648)  # 操作窗口框架
@@ -314,6 +329,14 @@ class GZZQClientTrader():
         win32api.PostMessage(self.tree_view_hwnd, win32con.WM_KEYDOWN, win32con.VK_F4, 0)
         time.sleep(0.5)
         self.capital_window_hwnd = win32gui.GetDlgItem(operate_frame_hwnd, 0xE901)  # 资金股票窗口框架
+        capital_frame_hwnd = GZZQClientTrader._find_capital_frame_hwnd(self.capital_window_hwnd)
+        self.available_amount_hwnd = win32gui.GetDlgItem(capital_frame_hwnd, 0x3F8)  # 可用金额
+        self.freezing_amount_hwnd = win32gui.GetDlgItem(capital_frame_hwnd, 0x3F5)  # 冻结资金
+        self.tot_stock_value_hwnd = win32gui.GetDlgItem(capital_frame_hwnd, 0x3F6)  # 股票市值
+        self.tot_capital_hwnd = win32gui.GetDlgItem(capital_frame_hwnd, 0x3F7)  # 总资产
+
+        # 关闭提示框
+        self.close_confirm_win_if_exist()
 
     def balance(self):
         return self.get_balance()
@@ -323,6 +346,18 @@ class GZZQClientTrader():
         time.sleep(0.3)
         data = self._read_clipboard()
         return self.project_copy_data(data)[0]
+
+    def get_available_amount(self):
+        return helpers.get_text_by_hwnd(self.available_amount_hwnd, cast=float)
+
+    def get_freezing_amount(self):
+        return helpers.get_text_by_hwnd(self.freezing_amount_hwnd, cast=float)
+
+    def get_tot_stock_value(self):
+        return helpers.get_text_by_hwnd(self.tot_stock_value_hwnd, cast=float)
+
+    def get_tot_capital(self):
+        return helpers.get_text_by_hwnd(self.tot_capital_hwnd, cast=float)
 
     def buy(self, stock_code, price, amount, remark="", **kwargs):
         """
