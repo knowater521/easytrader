@@ -670,9 +670,9 @@ class GZZQClientTrader():
                 bs_s = stock_bs_df.ix[idx]
                 wap_mode = bs_s.wap_mode
                 if wap_mode == 'twap':
-                    self.twap_order(bs_s, config)
-                elif wap_mode == "twap2":
-                    self.twap2_order(bs_s, config)
+                    self.twap_initiative(bs_s, config)
+                elif wap_mode == "twap_half_initiative":
+                    self.twap_half_initiative(bs_s, config)
                 else:
                     raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.stock_code, bs_s.wap_mod))
             # 休息 继续
@@ -831,13 +831,20 @@ class GZZQClientTrader():
         #     sell_price1 = ref_price
 
         if direction == 1:
-            # 计算买入数量
+            # 计算最大买入金额
             apply_amount_limit = limit_amount - holding_amount - apply_amount_has
+            # 计算目标买入金额
             apply_amount_target = target_position * ref_price - holding_amount - apply_amount_has
+            # 如果目标买入金额与最大买入金额差距小于 最小忽略金额 则直接按最大下单金额执行
+            if apply_amount_limit - apply_amount_target < self.ignore_mini_order:
+                apply_amount_target = apply_amount_limit
+            # 计算最小买入手数
             order_vol_min = math.ceil(20000 / ref_price / 100) * 100
+            # 计算最大买入手数
             apply_vol_limit = math.floor(apply_amount_limit / ref_price / 100) * 100
             if order_vol_min > apply_vol_limit:
                 order_vol_min = apply_vol_limit
+            # 计算目标买入手数
             apply_vol_target = math.ceil(apply_amount_target / ref_price / 100) * 100
             if apply_vol_target < order_vol_min:
                 apply_vol_target = order_vol_min
@@ -848,24 +855,38 @@ class GZZQClientTrader():
                 return order_vol, price
             order_vol = apply_vol_target
         elif direction == 0:
-            # 计算卖出数量
-            apply_amount_limit = holding_amount - limit_amount - apply_amount_has
-            apply_amount_target = holding_amount - target_position * ref_price - apply_amount_has
-            order_vol_min = math.ceil(20000 / ref_price)
-            apply_vol_limit = math.ceil(apply_amount_limit / ref_price)
-            if order_vol_min > apply_vol_limit:
-                order_vol_min = apply_vol_limit
-            apply_vol_target = math.ceil(apply_amount_target / ref_price)
-            if apply_vol_target < order_vol_min:
-                apply_vol_target = order_vol_min
-            if apply_vol_target > apply_vol_limit:
-                apply_vol_target = apply_vol_limit
-            # 没有卖出金额太小忽略的限制
-            order_vol = apply_vol_target
+            if target_position == 0:
+                order_vol = holding_position
+            else:
+                # 计算最大卖出金额
+                apply_amount_limit = holding_amount - limit_amount - apply_amount_has
+                if apply_amount_limit > holding_amount:
+                    apply_amount_limit = holding_amount
+                # 计算目标卖出金额
+                apply_amount_target = holding_amount - target_position * ref_price - apply_amount_has
+                # 如果目标卖出金额与最大卖出金额差距小于 最小忽略金额 则直接按最大下单金额执行
+                if apply_amount_limit - apply_amount_target < self.ignore_mini_order:
+                    apply_amount_target = apply_amount_limit
+                # 计算最小卖出手数
+                order_vol_min = math.ceil(20000 / ref_price)
+                # 计算最大卖出手数
+                apply_vol_limit = math.ceil(apply_amount_limit / ref_price)
+                if apply_vol_limit > holding_position:
+                    apply_vol_limit = holding_position
+                if order_vol_min > apply_vol_limit:
+                    order_vol_min = apply_vol_limit
+                # 计算目标卖出手数
+                apply_vol_target = math.ceil(apply_amount_target / ref_price)
+                if apply_vol_target < order_vol_min:
+                    apply_vol_target = order_vol_min
+                if apply_vol_target > apply_vol_limit:
+                    apply_vol_target = apply_vol_limit
+                # 没有卖出金额太小忽略的限制
+                order_vol = apply_vol_target
 
         return order_vol, price
 
-    def twap_order(self, bs_s, config):
+    def twap_initiative(self, bs_s, config):
         """
         简单twap算法交易
         :param bs_s: 
@@ -915,7 +936,138 @@ class GZZQClientTrader():
             log.debug('算法卖出 %s 买1委托价格 %f', stock_code_str, price)
             self.sell(stock_code_str, price, order_vol)
 
-    def twap2_order(self, bs_s, config):
+    def twap_half_initiative(self, bs_s, config):
+        """
+        集合竞价9：25分前，根据盘口加±0.01(1Move)主动挂单（如果没有盘口则不挂单）
+        9：30分开始：
+        买入：买1价+0.01(1Move)挂单
+        卖出：卖1价-0.01(1Move)挂单
+        每一轮次不撤单
+        执行剩余最后1分钟时
+        撤单，按对手价开始成交
+        :param bs_s: 
+        :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
+        :return: 
+        """
+        stock_code = bs_s.name
+        stock_code_str = '%06d' % stock_code
+        final_position = bs_s.final_position
+        init_position = bs_s.init_position
+        direction = 1 if init_position < final_position else 0
+        # 将小额买入卖出过滤掉，除了清仓指令
+        ref_price = bs_s.ref_price
+        # gap_position 可能为负数
+        gap_position = final_position - init_position
+        # 将小额买入卖出过滤掉，除了清仓指令
+        if gap_position == 0:
+            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return
+
+        datetime_now = datetime.now()
+        deadline_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00','%Y-%m-%d %H:%M:%S')
+        start_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:30:00', '%Y-%m-%d %H:%M:%S')
+
+        if datetime_now < deadline_datetime:
+            # 检查当前时刻是否超过 集合竞价 时间
+            self.get_bs_offer_data(stock_code)
+            offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code_str)
+            if direction == 1:
+                offer_price = offer_buy_list[0][0]
+                offer_vol = offer_buy_list[0][1]
+            else:
+                offer_price = offer_sell_list[0][0]
+                offer_vol = offer_sell_list[0][1]
+            if math.isnan(offer_price):
+                return
+            # 获取持仓信息
+            # position_df = self.get_position()
+            # if stock_code in position_df.index:
+            #     # 如果股票存在持仓，轧差后下单手数
+            #     holding_position = position_df.holding_position[stock_code]
+            #     holding_amount = position_df.market_value[stock_code]
+            # else:
+            #     holding_position = 0
+            #     holding_amount = 0
+            # 集合竞价盘口价格±0.01(1 move)
+            min_move = get_min_move_unit(stock_code)
+            if direction == 1:
+                order_vol = min([gap_position, math.floor(offer_vol * 0.8)])
+                order_price = offer_price + min_move
+            else:
+                order_vol = min([abs(gap_position), math.floor(offer_vol * 0.8)])
+                order_price = offer_price - min_move
+            # 执行买卖操作
+            if not(math.isnan(order_vol) or order_vol <= 0 or math.isnan(order_price) or order_price <= 0):
+                # 执行买卖逻辑
+                if direction == 1:
+                    order_price = order_price - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                    # log.debug('算法买入 %s 买1委托价格 %f', stock_code_str, order_price)
+                    self.buy(stock_code_str, order_price, order_vol, remark="集合买入 买1+%.3f" % min_move)
+                else:
+                    order_price = order_price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                    # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
+                    self.sell(stock_code_str, order_price, order_vol, remark="集合卖出 卖1-%.3f" % min_move)
+
+        elif start_datetime < datetime_now:
+            # 检查当前时刻是否超过 交易时段 时间
+            timedelta_consume = datetime_now - config['datetime_start']
+            order_rate = timedelta_consume.seconds / config['timedelta_tot']
+            if order_rate > 1:
+                order_rate = 1
+            if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
+                log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
+                         stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+                return
+            target_position = init_position + gap_position * order_rate
+            # self.cancel_entrust(stock_code_str, bs_s.direction)
+            # 获取上一周期时的委托价格
+            key_price_last_period = 'apply_price_%06d' % stock_code
+            order_price_on_last_period = config.setdefault(key_price_last_period, ref_price)
+
+            # 获取盘口价格
+            offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code_str)
+            if direction == 1:
+                order_price = offer_buy_list[0][0]
+            else:
+                order_price = offer_sell_list[0][0]
+            if math.isnan(order_price):
+                order_price = ref_price
+            min_move = get_min_move_unit(stock_code)
+            if direction == 1:
+                # 如果当前 买1 价与上一次的 order_price 委托价格相同，则继续使用上一个周期时的委托价格
+                # 此逻辑是为了防止出现过大的冲击成本，造成一轮轮的委托推动价格上涨
+                if order_price != order_price_on_last_period:
+                    # 设置 order_price 价格
+                    order_price = order_price + min_move
+            else:
+                # 如果当前 卖1 价与上一次的 price2 委托价格相同，则继续使用上一个周期时的委托价格
+                # 此逻辑是为了防止出现过大的冲击成本，造成一轮轮的委托推动价格上涨
+                if order_price != order_price_on_last_period:
+                    # 设置 order_price 价格
+                    order_price = order_price - min_move
+
+            # 获取两个价格分别下单数量
+            order_vol, order_price = self.calc_order_by_price(stock_code,
+                                                  ref_price=order_price,
+                                                  direction=direction,
+                                                  target_position=target_position,
+                                                  limit_position=final_position)
+
+            if not(math.isnan(order_vol) or order_vol <= 0 or math.isnan(order_price) or order_price <= 0):
+                # 执行买卖逻辑
+                if direction == 1:
+                    order_price = order_price - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                    # log.debug('算法买入 %s 买1委托价格 %f', stock_code_str, order_price)
+                    self.buy(stock_code_str, order_price, order_vol, remark="算法买入 买1")
+                else:
+                    order_price = order_price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                    # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
+                    self.sell(stock_code_str, order_price, order_vol, remark="算法卖出 卖1")
+
+                config[key_price_last_period] = order_price
+
+    def twap3_order(self, bs_s, config):
         """
         简单twap算法交易
         每一次买入委托价格为买1价格及买1+0.01元（最小移动単位）各下一份
