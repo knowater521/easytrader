@@ -670,11 +670,11 @@ class GZZQClientTrader():
                 bs_s = stock_bs_df.ix[idx]
                 wap_mode = bs_s.wap_mode
                 if wap_mode == 'twap':
-                    self.twap_initiative(bs_s, config)
+                    self.twap_half_initiative(bs_s, config)  # self.twap_initiative(bs_s, config)
                 elif wap_mode == "twap_half_initiative":
                     self.twap_half_initiative(bs_s, config)
                 else:
-                    raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.stock_code, bs_s.wap_mod))
+                    raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.name, bs_s.wap_mod))
             # 休息 继续
             time.sleep(interval)
 
@@ -723,7 +723,7 @@ class GZZQClientTrader():
         # 如果 refprice == 0，则以 market_price 为准
         for stock_code in stock_bs_df.index:
             if stock_bs_df['ref_price'][stock_code] == 0 and stock_bs_df['market_price'][stock_code] != 0:
-                log.info('%06d ref_price --> market_price %f', stock_code, stock_bs_df['market_price'][stock_code])
+                # log.info('%06d ref_price --> market_price %f', stock_code, stock_bs_df['market_price'][stock_code])
                 stock_bs_df['ref_price'][stock_code] = stock_bs_df['market_price'][stock_code]
         return stock_bs_df
 
@@ -975,9 +975,11 @@ class GZZQClientTrader():
             if direction == 1:
                 offer_price = offer_buy_list[0][0]
                 offer_vol = offer_buy_list[0][1]
+                offer_vol = 0 if math.isnan(offer_vol) else offer_vol
             else:
                 offer_price = offer_sell_list[0][0]
                 offer_vol = offer_sell_list[0][1]
+                offer_vol = 0 if math.isnan(offer_vol) else offer_vol
             if math.isnan(offer_price):
                 return
             # 获取持仓信息
@@ -989,14 +991,24 @@ class GZZQClientTrader():
             # else:
             #     holding_position = 0
             #     holding_amount = 0
+            apply_df = self.get_apply(stock_code)
+            if apply_df is None or apply_df.shape[0] == 0:
+                apply_vol_has = 0
+            else:
+                apply_vol_has = apply_df.apply_vol
             # 集合竞价盘口价格±0.01(1 move)
             min_move = get_min_move_unit(stock_code)
             if direction == 1:
-                order_vol = min([gap_position, math.floor(offer_vol * 0.8)])
+                order_vol = min([gap_position - apply_vol_has, math.floor(offer_vol * 0.8)])
                 order_price = offer_price + min_move
             else:
-                order_vol = min([abs(gap_position), math.floor(offer_vol * 0.8)])
+                order_vol = min([abs(gap_position) - apply_vol_has, math.floor(offer_vol * 0.8)])
                 order_price = offer_price - min_move
+            if order_vol <= 0:
+                log.info('%s %s %d -> %d 已申报数量：%d 参考价格：%f 单子太小，忽略',
+                         stock_code_str, '买入' if direction == 1 else '卖出',
+                         init_position, final_position, apply_vol_has, ref_price)
+                return
             # 执行买卖操作
             if not(math.isnan(order_vol) or order_vol <= 0 or math.isnan(order_price) or order_price <= 0):
                 # 执行买卖逻辑
