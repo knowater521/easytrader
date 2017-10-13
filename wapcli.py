@@ -88,15 +88,41 @@ def main(config_path, use, debug=False):
             elif command_num == 5:
                 # 设置执行参数
                 # 为了让 datetime_start 等于实际开始执行时的“当前时间”，因此，直到开始执行才设置 datetime_start = datetime.now()
-                datetime_start_str = input("起始执行时间(HH:MM:SS)(默认为当前时间)：")
-                datetime_start = None if datetime_start_str == "" else datetime.strptime(
-                    datetime.now().strftime('%Y-%m-%d ') + datetime_start_str, '%Y-%m-%d %H:%M:%S')
+                for _ in range(3):
+                    try:
+                        datetime_start_str = input("起始执行时间(HH:MM:SS)(默认为当前时间)：")
+                        datetime_start = None if datetime_start_str == "" else datetime.strptime(
+                            datetime.now().strftime('%Y-%m-%d ') + datetime_start_str, '%Y-%m-%d %H:%M:%S')
+                        break
+                    except:
+                        print_red("%s 格式不对" % datetime_start_str)
+                else:
+                    continue
 
-                timedelta_tot_str = input("执行持续时长(秒)(默认120)：")
-                timedelta_tot = 120 if timedelta_tot_str == "" else int(timedelta_tot_str)
+                for _ in range(3):
+                    try:
+                        datetime_end_str = input("结束执行时间(HH:MM:SS)(默认为9:35)：")
+                        datetime_end_str = "9:35:00" if datetime_end_str is "" else datetime_end_str
+                        datetime_end = datetime.strptime(
+                            datetime.now().strftime('%Y-%m-%d ') + datetime_end_str, '%Y-%m-%d %H:%M:%S')
+                        break
+                    except:
+                        print_red("%s 格式不对" % datetime_end_str)
+                else:
+                    continue
 
-                interval_str = input("执行间隔时长(秒)(默认10)：")
-                interval = 10 if interval_str == "" else int(interval_str)
+                # timedelta_tot_str = input("执行持续时长(秒)(默认120)：")
+                # timedelta_tot = 120 if timedelta_tot_str == "" else int(timedelta_tot_str)
+
+                for _ in range(3):
+                    try:
+                        interval_str = input("执行间隔时长(秒)(默认10)：")
+                        interval = 10 if interval_str == "" else int(interval_str)
+                        break
+                    except:
+                        print_red("%s 格式不对" % interval_str)
+                else:
+                    continue
 
                 is_ok = False
                 for _ in range(3):
@@ -109,11 +135,12 @@ def main(config_path, use, debug=False):
                         is_ok = False
                         break
                     else:
-                        pass
+                        print_red("%s 格式不对" % ok_str)
+
                 if is_ok:
                     datetime_start = datetime.now() if datetime_start is None else datetime_start
                     print_green('执行算法交易 开始')
-                    config = {'timedelta_tot': timedelta_tot, 'datetime_start': datetime_start, 'interval': 10}
+                    config = {'datetime_end': datetime_end, 'datetime_start': datetime_start, 'interval': 10}
                     print_green('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
                     while datetime_start > datetime.now():
                         time.sleep(1)
@@ -124,7 +151,7 @@ def main(config_path, use, debug=False):
             else:
                 print_red('未知命令')
         except:
-            logger.exception('table')
+            logger.exception('')
 
 if __name__ == "__main__":
     main(config_path="json/gzzq.json", use="gzzq")
