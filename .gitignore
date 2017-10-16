@@ -72,3 +72,4 @@ target/
 tmp/
 auto_order_dir/
 secrets/
+*.csv

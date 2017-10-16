@@ -39,7 +39,8 @@ class GZZQClientTrader():
         self._apply_df = None
         self.ignore_mini_order = 10000
         self._csv_data_dic = {}
-        self.csv_expire_timedelta = timedelta(seconds=30)
+        # 为了防止频繁获取 csv文件耽误时间，做了一个小的缓存机制，超时时间设置
+        self.csv_expire_timedelta = timedelta(seconds=10)
 
     def prepare(self, config_path=None, user=None, password=None, exe_path='D:\TradeTools\广州证券网上交易\hexin.exe'):
         """
@@ -943,15 +944,10 @@ class GZZQClientTrader():
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
-        if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
             return
-        if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
-            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
-            return
+
         # 检查时间进度
         datetime_now = datetime.now()
         timedelta_consume = datetime_now - config['deal_start_datetime']
@@ -1000,19 +996,8 @@ class GZZQClientTrader():
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
-        if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
-            return
-        # 首次操作时，将过往为成交订单全部撤销
-        if config.setdefault('init_' + stock_code_str, False):
-            self.cancel_entrust(stock_code, direction)
-            config['init_' + stock_code_str] = True
-        # 过滤掉小额订单
-        if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
-            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
             return
 
         # 检查时间进度
@@ -1092,10 +1077,8 @@ class GZZQClientTrader():
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
-        if gap_position == 0:
-            log.debug('%s %s %d -> %d 已经达成目标仓位，忽略',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
             return
 
         datetime_now = datetime.now()
@@ -1171,14 +1154,8 @@ class GZZQClientTrader():
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
-        if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
-            return
-        if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
-            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
-                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
             return
         target_position = init_position + gap_position * order_rate
         # self.cancel_entrust(stock_code_str, bs_s.direction)
@@ -1287,3 +1264,30 @@ class GZZQClientTrader():
             price = price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交
             # log.debug('主动卖出 %s买2委托价格 %f', stock_code_str, price)
             self.sell(stock_code_str, price, abs(order_vol), remark="主动卖出 买2")
+
+    def ignore_order(self, bs_s):
+        """
+        忽略小额订单
+        :param bs_s: 
+        :return: 
+        """
+        stock_code = bs_s.name
+        stock_code_str = '%06d' % stock_code
+        final_position = bs_s.final_position
+        init_position = bs_s.init_position
+        direction = 1 if init_position < final_position else 0
+        # 将小额买入卖出过滤掉，除了清仓指令
+        ref_price = bs_s.ref_price
+        # gap_position 可能为负数
+        gap_position = final_position - init_position
+        # 将小额买入卖出过滤掉，除了清仓指令
+        if gap_position == 0:
+            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return True
+        # 仅限于调仓阶段（建仓、清仓阶段不忽略小额单子）
+        if final_position != 0 and init_position != 0 and abs(gap_position * ref_price) < self.ignore_mini_order:
+            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
+                     stock_code_str, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            return True
+        return False
