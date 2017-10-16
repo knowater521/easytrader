@@ -696,7 +696,7 @@ class GZZQClientTrader():
 
         start_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:30:00', '%Y-%m-%d %H:%M:%S')
         if datetime.now() < start_datetime:
-            wait_seconds = (start_datetime - datetime.now).seconds
+            wait_seconds = (start_datetime - datetime.now()).seconds
             log.info('交易时段为开始，等待 %d 秒后启动', wait_seconds)
             time.sleep(wait_seconds)
         config['deal_end_datetime'] = config['datetime_end']
@@ -1018,7 +1018,7 @@ class GZZQClientTrader():
         # 检查时间进度
         datetime_now = datetime.now()
         timedelta_consume = datetime_now - config['deal_start_datetime']
-        order_rate = timedelta_consume.seconds / config['deal_seconds']
+        order_rate = timedelta_consume.seconds / config['deal_seconds'] * 1.2 # 加速买入速率
         if order_rate > 1:
             order_rate = 1
         elif order_rate < 0:
@@ -1102,16 +1102,15 @@ class GZZQClientTrader():
         aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00', '%Y-%m-%d %H:%M:%S')
         if datetime_now < aggregate_auction_datetime:
             # 检查当前时刻是否超过 集合竞价 时间
-            self.get_bs_offer_data(stock_code)
             offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code_str)
             if direction == 1:
                 offer_price = offer_buy_list[0][0]
                 offer_vol = offer_buy_list[0][1]
-                offer_vol = 0 if math.isnan(offer_vol) else offer_vol
+                offer_vol = 0 if math.isnan(offer_vol) else offer_vol * 100
             else:
                 offer_price = offer_sell_list[0][0]
                 offer_vol = offer_sell_list[0][1]
-                offer_vol = 0 if math.isnan(offer_vol) else offer_vol
+                offer_vol = 0 if math.isnan(offer_vol) else offer_vol * 100
             if math.isnan(offer_price):
                 return
             # 获取已发送的买卖申请
@@ -1123,10 +1122,10 @@ class GZZQClientTrader():
             # 集合竞价盘口价格±0.01(1 move)
             min_move = get_min_move_unit(stock_code)
             if direction == 1:
-                order_vol = min([gap_position - apply_vol_has, math.floor(offer_vol * 0.8)])
+                order_vol = min([gap_position - apply_vol_has, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)])
                 order_price = offer_price + min_move
             else:
-                order_vol = min([abs(gap_position) - apply_vol_has, math.floor(offer_vol * 0.8)])
+                order_vol = min([abs(gap_position) - apply_vol_has, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)])
                 order_price = offer_price - min_move
             if order_vol <= 0:
                 log.info('%s %s %d -> %d 已报数量：%d 买卖价格：%f 忽略',
