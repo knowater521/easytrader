@@ -983,7 +983,8 @@ class GZZQClientTrader():
         卖出：卖1价-0.01(1Move)挂单
         每一轮次不撤单
         执行剩余最后1分钟时
-        撤单，按对手价开始成交
+        撤单买入：买1价+0.01(1Move)挂单
+        撤单卖出：卖1价-0.01(1Move)挂单
         :param bs_s: 
         :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
         :return: 
@@ -1041,6 +1042,10 @@ class GZZQClientTrader():
                 # 设置 order_price 价格
                 order_price = order_price - min_move
 
+        # 最后一分钟，执行撤单买入操作
+        deal_end_datetime = config['deal_end_datetime']
+        if deal_end_datetime - timedelta(minutes=1) < datetime.now():
+            self.cancel_entrust(stock_code, direction)
         # 获取两个价格分别下单数量
         order_vol, order_price = self.calc_order_by_price(stock_code,
                                                           ref_price=order_price,
