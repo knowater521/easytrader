@@ -7,7 +7,8 @@ import click
 import easytrader
 from termcolor import cprint
 import os
-from datetime import datetime, time
+from datetime import datetime
+import time
 import logging
 import pandas as pd
 
