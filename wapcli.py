@@ -65,6 +65,7 @@ def main(config_path, use, debug=False):
         print('输入 3：查询当前持仓')
         print('输入 4：查询合并后交易列表')
         print('输入 5：执行算法交易')
+        print('输入 6：对比执行结果')
         command_num = int(input("输入："))
         try:
             if command_num == 0:
@@ -149,6 +150,23 @@ def main(config_path, use, debug=False):
                     print_green('执行算法交易 结束')
                 else:
                     print_green('取消算法交易')
+            elif command_num == 6:
+                print_green('交易结果对比分析')
+                stock_bs_df = user.reform_order(stock_target_df)
+                res_df = stock_bs_df[['sec_name', 'final_position', 'init_position', 'ref_price', 'cost_price']]
+                res_df['gap_position'] = (res_df['init_position'] - res_df['final_position']).apply(
+                    lambda x: '%d ' % x + ('↑' if x > 0 else '↓' if x < 0 else 'ok'))
+                res_df['gap_price'] = (res_df['cost_price'] - res_df['ref_price']).apply(
+                    lambda x: '%.3f ' % x + ('↑' if x > 0 else '↓' if x < 0 else ''))
+                res_df.rename(columns={'final_position': '目标仓位',
+                                       'init_position': '当前仓位',
+                                       'ref_price': '目标价格',
+                                       'cost_price': '持仓成本',
+                                       'gap_position': '目标持仓差',
+                                       'gap_price': '目标成本差',
+                                       }, inplace=True)
+                print(res_df)
+                res_df.to_csv('对比执行结果.csv')
             else:
                 print_red('未知命令')
         except:

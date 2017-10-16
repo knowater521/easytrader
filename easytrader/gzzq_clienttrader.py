@@ -1118,7 +1118,7 @@ class GZZQClientTrader():
             if apply_df is None or apply_df.shape[0] == 0:
                 apply_vol_has = 0
             else:
-                apply_vol_has = apply_df.apply_vol
+                apply_vol_has = apply_df.apply_vol.sum()
             # 集合竞价盘口价格±0.01(1 move)
             min_move = get_min_move_unit(stock_code)
             if direction == 1:
