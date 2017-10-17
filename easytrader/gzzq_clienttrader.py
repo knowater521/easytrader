@@ -694,21 +694,22 @@ class GZZQClientTrader():
 
         stock_bs_df = self.reform_order(stock_target_df)
         stock_bs_df = self.sort_order(stock_bs_df)
-        datetime_now = datetime.now()
-        aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00',
-                                                       '%Y-%m-%d %H:%M:%S')
-        # 集合竞价时段 算法交易
-        if datetime.now() < aggregate_auction_datetime:
-            # 每个股票执行独立的算法交易
-            for idx in stock_bs_df.index:
-                bs_s = stock_bs_df.ix[idx]
-                self.wap_aggregate_auction(bs_s, config)
-            # 清空 csv 缓存
-            self.clean_csv_cache()
-            # 休息 继续
-            time.sleep(interval)
+        if config.setdefault('aggregate_auction', True):
+            datetime_now = datetime.now()
+            aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00',
+                                                           '%Y-%m-%d %H:%M:%S')
+            # 集合竞价时段 算法交易
+            if datetime.now() < aggregate_auction_datetime:
+                # 每个股票执行独立的算法交易
+                for idx in stock_bs_df.index:
+                    bs_s = stock_bs_df.ix[idx]
+                    self.wap_aggregate_auction(bs_s, config)
+                # 清空 csv 缓存
+                self.clean_csv_cache()
+                # 休息 继续
+                time.sleep(interval)
 
-        start_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:30:00', '%Y-%m-%d %H:%M:%S')
+        start_datetime = datetime.strptime(datetime.now().strftime('%Y-%m-%d ') + '9:30:00', '%Y-%m-%d %H:%M:%S')
         if datetime.now() < start_datetime:
             wait_seconds = (start_datetime - datetime.now()).seconds
             log.info('交易时段为开始，等待 %d 秒后启动', wait_seconds)
@@ -722,7 +723,7 @@ class GZZQClientTrader():
             for idx in stock_bs_df.index:
                 bs_s = stock_bs_df.ix[idx]
                 wap_mode = bs_s.wap_mode
-                if wap_mode == 'twap':
+                if wap_mode in ('twap', 'twap_initiative'):
                     self.twap_initiative(bs_s, config)  # self.twap_initiative(bs_s, config)
                 elif wap_mode in ("twap_half_initiative", 'auto'):
                     self.twap_half_initiative(bs_s, config)
@@ -730,14 +731,17 @@ class GZZQClientTrader():
                     raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.name, wap_mode))
             # 清空 csv 缓存
             self.clean_csv_cache()
+            if config.setdefault('once', False):
+                break
             # 休息 继续
             time.sleep(interval)
 
         # 循环结束，再次执行一遍确认所有单子都已经下出去了，价格主动成交
-        log.info("剩余未完成订单统一执行对手价买入")
-        for idx in stock_bs_df.index:
-            bs_s = stock_bs_df.ix[idx]
-            self.deal_order_active(bs_s)
+        if config.setdefault('final_deal', True):
+            log.info("剩余未完成订单统一执行对手价买入")
+            for idx in stock_bs_df.index:
+                bs_s = stock_bs_df.ix[idx]
+                self.deal_order_active(bs_s)
 
     def sort_order(self, stock_bs_df):
         """
