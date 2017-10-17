@@ -444,7 +444,7 @@ class GZZQClientTrader():
     def position(self):
         return self.get_position()
 
-    def get_position(self):
+    def get_position(self, stock_code=None):
         """
         获取当前持仓信息
         :return: 
@@ -463,7 +463,17 @@ class GZZQClientTrader():
                                               '市值': 'market_value'}, inplace=True)
             position_df['stock_code'] = ['%06d' % stock_code for stock_code in position_df['stock_code']]
             position_df.set_index('stock_code', inplace=True)
-            position_df
+        if stock_code is None:
+            ret_df = position_df
+        elif position_df is None:
+            ret_df = None
+        else:
+            gdf = position_df.groupby('stock_code')
+            if stock_code in gdf.groups:
+                ret_df = gdf.get_group(stock_code)
+            else:
+                ret_df = None
+
         return position_df
 
     def get_apply(self, stock_code=None):
@@ -488,7 +498,7 @@ class GZZQClientTrader():
             apply_df['stock_code'] = ['%06d' % stock_code for stock_code in apply_df['stock_code']]
             apply_df.set_index('stock_code', inplace=True)
         if stock_code is None:
-            return apply_df
+            ret_df = apply_df
         elif apply_df is None:
             ret_df = None
         else:
