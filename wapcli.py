@@ -11,6 +11,7 @@ from datetime import datetime
 import time
 import logging
 import pandas as pd
+from collections import OrderedDict
 
 logger = logging.getLogger()
 
@@ -30,6 +31,7 @@ def load_stock_order():
         file_path = os.path.join(base_dir, file_name)
         data_df_tmp = pd.read_csv(file_path, index_col=0, header=None, skipinitialspace=True)
         if data_df is None:
+            data_df_tmp.index = ['%06d' % stock_code for stock_code in data_df_tmp.index]
             data_df = data_df_tmp
         else:
             data_df = data_df.append(data_df_tmp)
@@ -58,16 +60,24 @@ def main(config_path, use, debug=False):
     print_green = lambda x: cprint(x, 'green')
     print("*"*10, '欢迎使用广发证券版 easytrader 控制台 version:0.1', '*'*10)
     stock_target_df = None
+    command_num_desc_dic = OrderedDict([
+    (0, '退出'),
+    (1, '导入股票列表'),
+    (2, '查询目标股票列表'),
+    (3, '查询当前持仓'),
+    (4, '查询合并后交易列表'),
+    (5, '执行算法交易'),
+    (6, '对比执行结果'),
+    (7, '全部撤单'),
+    (8, '全部买/卖1档±0.01下单'),
+    (9, '全部对手价下单'),
+    ])
     while True:
-        print('输入 0：退出')
-        print('输入 1：导入股票列表')
-        print('输入 2：查询目标股票列表')
-        print('输入 3：查询当前持仓')
-        print('输入 4：查询合并后交易列表')
-        print('输入 5：执行算法交易')
-        print('输入 6：对比执行结果')
-        command_num = int(input("输入："))
+        for command_num_desc in command_num_desc_dic.items():
+            print('输入 %d：%s' % command_num_desc)
+
         try:
+            command_num = int(input("输入："))
             if command_num == 0:
                 print_green('退出')
                 break
@@ -126,19 +136,7 @@ def main(config_path, use, debug=False):
                 else:
                     continue
 
-                is_ok = False
-                for _ in range(3):
-                    ok_str = input("确认开始执行(y/n)(默认y)：")
-                    ok_str = 'y' if ok_str == "" else ok_str
-                    if ok_str == 'y' or ok_str == 'Y':
-                        is_ok = True
-                        break
-                    elif ok_str == 'n' or ok_str == 'N':
-                        is_ok = False
-                        break
-                    else:
-                        print_red("%s 格式不对" % ok_str)
-
+                is_ok = inputYN()
                 if is_ok:
                     datetime_start = datetime.now() if datetime_start is None else datetime_start
                     print_green('执行算法交易 开始')
@@ -167,10 +165,41 @@ def main(config_path, use, debug=False):
                                        }, inplace=True)
                 print(res_df)
                 res_df.to_csv('对比执行结果.csv')
+            elif command_num == 7:
+                print_green(command_num_desc_dic[command_num], )
+                is_ok = inputYN()
+                if is_ok:
+                    user.cancel_all_apply()
+            elif command_num == 8:
+                print_green(command_num_desc_dic[command_num], )
+                is_ok = inputYN()
+                if is_ok:
+                    pass
+            elif command_num == 9:
+                print_green(command_num_desc_dic[command_num], )
+                is_ok = inputYN()
+                if is_ok:
+                    pass
             else:
                 print_red('未知命令')
         except:
             logger.exception('')
+
+
+def inputYN():
+    is_ok = False
+    for _ in range(3):
+        ok_str = input("确认开始执行(y/n)(默认y)：")
+        ok_str = 'y' if ok_str == "" else ok_str
+        if ok_str == 'y' or ok_str == 'Y':
+            is_ok = True
+            break
+        elif ok_str == 'n' or ok_str == 'N':
+            is_ok = False
+            break
+        else:
+            print("%s 格式不对" % ok_str)
+    return is_ok
 
 if __name__ == "__main__":
     main(config_path="json/gzzq.json", use="gzzq")
