@@ -58,19 +58,19 @@ def main(config_path, use, debug=False):
     # 根据输入命令执行，相应指令
     print_red = lambda x: cprint(x, 'red')
     print_green = lambda x: cprint(x, 'green')
-    print("*"*10, '欢迎使用广发证券版 easytrader 控制台 version:0.1', '*'*10)
+    print("*" * 10, '欢迎使用广发证券版 easytrader 控制台 version:0.1', '*' * 10)
     stock_target_df = None
     command_num_desc_dic = OrderedDict([
-    (0, '退出'),
-    (1, '导入股票列表'),
-    (2, '查询目标股票列表'),
-    (3, '查询当前持仓'),
-    (4, '查询合并后交易列表'),
-    (5, '执行算法交易'),
-    (6, '对比执行结果'),
-    (7, '全部撤单'),
-    (8, '全部买/卖1档±0.01下单'),
-    (9, '全部对手价下单'),
+        (0, '退出'),
+        (1, '导入股票列表'),
+        (2, '查询目标股票列表'),
+        (3, '查询当前持仓'),
+        (4, '查询合并后交易列表'),
+        (5, '执行算法交易'),
+        (6, '对比执行结果'),
+        (7, '全部撤单'),
+        (8, '全部买/卖1档±0.01下单'),
+        (9, '全部对手价下单'),
     ])
     while True:
         for command_num_desc in command_num_desc_dic.items():
@@ -174,12 +174,22 @@ def main(config_path, use, debug=False):
                 print_green(command_num_desc_dic[command_num], )
                 is_ok = inputYN()
                 if is_ok:
-                    pass
+                    datetime_start = datetime.now()
+                    datetime_end = datetime.now()
+                    config = {'datetime_end': datetime_end, 'datetime_start': datetime_start,
+                              'aggregate_auction': False, 'once': True, 'final_deal': False,
+                              'wap_mode': 'twap_half_initiative'}
+                    user.auto_order(stock_target_df, config)
             elif command_num == 9:
                 print_green(command_num_desc_dic[command_num], )
                 is_ok = inputYN()
                 if is_ok:
-                    pass
+                    datetime_start = datetime.now()
+                    datetime_end = datetime.now()
+                    config = {'datetime_end': datetime_end, 'datetime_start': datetime_start,
+                              'aggregate_auction': False, 'once': True, 'final_deal': False,
+                              'wap_mode': 'twap_initiative'}
+                    user.auto_order(stock_target_df, config)
             else:
                 print_red('未知命令')
         except:
@@ -200,6 +210,7 @@ def inputYN():
         else:
             print("%s 格式不对" % ok_str)
     return is_ok
+
 
 if __name__ == "__main__":
     main(config_path="json/gzzq.json", use="gzzq")
