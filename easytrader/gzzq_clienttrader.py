@@ -349,12 +349,12 @@ class GZZQClientTrader():
         :return: bool: 买入信号是否成功发出
         """
         if math.isnan(price):
-            log.error("%s buy price is nan, %s", stock_code, remark)
+            log.error("%s 买入价格 is nan, %s", stock_code, remark)
             return
         if math.isnan(amount):
-            log.error("%s buy amount is nan, %s", stock_code, remark)
+            log.error("%s 买入金额 is nan, %s", stock_code, remark)
             return
-        amount = str(amount // 100 * 100)
+        amount_str = str(amount // 100 * 100)
         # price = str(price)
         price_str = '%.3f' % price
 
@@ -362,10 +362,10 @@ class GZZQClientTrader():
             win32gui.SendMessage(self.buy_stock_code_hwnd, win32con.WM_SETTEXT, None, stock_code)  # 输入买入代码
             time.sleep(0.2)
             win32gui.SendMessage(self.buy_price_hwnd, win32con.WM_SETTEXT, None, price_str)  # 输入买入价格
-            win32gui.SendMessage(self.buy_amount_hwnd, win32con.WM_SETTEXT, None, amount)  # 输入买入数量
+            win32gui.SendMessage(self.buy_amount_hwnd, win32con.WM_SETTEXT, None, amount_str)  # 输入买入数量
             time.sleep(0.2)
             win32gui.SendMessage(self.buy_btn_hwnd, win32con.BM_CLICK, None, None)  # 买入确定
-            log.info("买入：%s 价格：%s 数量：%s %s", stock_code, price_str, amount, remark)
+            log.info("买入：%s 价格：%s 数量：%s 金额：%.3f %s", stock_code, price_str, amount_str, amount * price, remark)
             time.sleep(0.5)
             # 查找是否存在确认框，如果有，将其关闭
             self.close_confirm_win_if_exist()
@@ -383,12 +383,12 @@ class GZZQClientTrader():
         :return: bool 卖出操作是否成功
         """
         if math.isnan(price):
-            log.error("%s sell price is nan, %s", stock_code, remark)
+            log.error("%s 卖出价格 nan, %s", stock_code, remark)
             return
         if math.isnan(amount):
-            log.error("%s sell amount is nan, %s", stock_code, remark)
+            log.error("%s 卖出金额 nan, %s", stock_code, remark)
             return
-        amount = str(amount // 100 * 100)
+        amount_str = str(amount // 100 * 100)
         # price = str(price)
         price_str = '%.3f' % price
 
@@ -397,10 +397,10 @@ class GZZQClientTrader():
             win32gui.SendMessage(self.sell_price_hwnd, win32con.WM_SETTEXT, None, price_str)  # 输入卖出价格
             win32gui.SendMessage(self.sell_price_hwnd, win32con.BM_CLICK, None, None)  # 输入卖出价格
             time.sleep(0.2)
-            win32gui.SendMessage(self.sell_amount_hwnd, win32con.WM_SETTEXT, None, amount)  # 输入卖出数量
+            win32gui.SendMessage(self.sell_amount_hwnd, win32con.WM_SETTEXT, None, amount_str)  # 输入卖出数量
             time.sleep(0.2)
             win32gui.SendMessage(self.sell_btn_hwnd, win32con.BM_CLICK, None, None)  # 卖出确定
-            log.info("卖出：%s 价格：%s 数量：%s %s", stock_code, price_str, amount, remark)
+            log.info("卖出：%s 价格：%s 数量：%s 金额：%.3f %s", stock_code, price_str, amount_str, amount * price, remark)
             time.sleep(0.5)
             # 查找是否存在确认框，如果有，将其关闭
             self.close_confirm_win_if_exist()
@@ -502,7 +502,8 @@ class GZZQClientTrader():
         elif apply_df is None:
             ret_df = None
         else:
-            gdf = apply_df.groupby('stock_code')
+            # 按 stock_code 进行group
+            gdf = apply_df.groupby(level=0)
             if stock_code in gdf.groups:
                 ret_df = gdf.get_group(stock_code)
             else:
@@ -534,8 +535,8 @@ class GZZQClientTrader():
             # 如果文件存在，将其删除
             if os.path.exists(file_path):
                 os.remove(file_path)
-            win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
-            time.sleep(0.1)
+            # win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
+            # time.sleep(0.1)
             # 多次尝试获取仓位
             # fast_mode = True
             for try_count in range(3):
@@ -544,8 +545,8 @@ class GZZQClientTrader():
                     time.sleep(0.5)
                     self.goto_buy_win(sub_win=sub_win_to)
                     time.sleep(0.5)
-                    win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
-                    time.sleep(0.2)
+                win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
+                time.sleep(0.2)
                 shell = GZZQClientTrader._set_foreground_window(self.position_list_hwnd)
 
                 # Ctrl +s 热键保存
@@ -841,7 +842,7 @@ class GZZQClientTrader():
         return order_vol, price
 
     def calc_order_by_price(self, stock_code, ref_price, direction, target_position, limit_position,
-                            include_apply=False):
+                            include_apply=True):
         """
         计算买卖股票的 order_vol, price，根据最大持有金额来计算当前价格下，还可以买入多少股票
         :param stock_code: 
