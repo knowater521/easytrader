@@ -10,3 +10,8 @@ ch = logging.StreamHandler()
 
 ch.setFormatter(fmt)
 log.handlers.append(ch)
+
+from logging.handlers import TimedRotatingFileHandler
+flog = TimedRotatingFileHandler('trflog.log', when='D')
+flog.suffix = "%Y-%m-%d_%H-%M.log"
+log.handlers.append(flog)

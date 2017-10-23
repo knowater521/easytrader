@@ -37,6 +37,8 @@ class GZZQClientTrader():
         self.base_dir = r'd:\Downloads'
         self.ignore_mini_order = 10000
         self._csv_data_dic = {}
+        # 统计twap期间的交易情况
+        self._stock_deal_datetime_dic = {}
         # 为了防止频繁获取 csv文件耽误时间，做了一个小的缓存机制，超时时间设置
         self.csv_expire_timedelta = timedelta(seconds=10)
 
@@ -216,6 +218,8 @@ class GZZQClientTrader():
             shell = GZZQClientTrader._set_foreground_window(hwnd)
             # Enter 热键 切断
             shell.SendKeys('~')
+            return True
+        return False
 
     def goto_buy_win(self, sub_win=None):
         # 获取委托窗口所有控件句柄
@@ -423,15 +427,19 @@ class GZZQClientTrader():
             win32gui.SendMessage(self.cancel_stock_code_hwnd, win32con.WM_SETTEXT, None, stock_code)  # 输入撤单
             win32gui.SendMessage(self.cancel_query_hwnd, win32con.BM_CLICK, None, None)  # 查询代码
             time.sleep(0.2)
+            action = "撤销"
             if direction is None:
                 win32gui.SendMessage(self.cancel_all_hwnd, win32con.BM_CLICK, None, None)  # 全撤
             elif direction == 1:
+                action = '撤销买入'
                 win32gui.SendMessage(self.cancel_buy_hwnd, win32con.BM_CLICK, None, None)  # 撤买
             elif direction == 0:
+                action = '撤销卖出'
                 win32gui.SendMessage(self.cancel_sell_hwnd, win32con.BM_CLICK, None, None)  # 撤卖
             time.sleep(0.5)
             # 查找是否存在确认框，如果有，将其关闭
-            self.close_confirm_win_if_exist()
+            if not self.close_confirm_win_if_exist():
+                log.info('%s %s 委托', action, stock_code)
             # 撤单后需要清除相关持仓缓存
             if 'apply' in self._csv_data_dic:
                 del self._csv_data_dic['apply']
@@ -449,7 +457,7 @@ class GZZQClientTrader():
         获取当前持仓信息
         :return: 
         """
-        position_df = self._get_csv_data(sub_win_from='deal', sub_win_to='holding')
+        _, position_df = self._get_csv_data()
         if position_df is not None:
             position_df.rename(columns={'证券代码': 'stock_code',
                                               '证券名称': 'sec_name',
@@ -468,7 +476,7 @@ class GZZQClientTrader():
         elif position_df is None:
             ret_df = None
         else:
-            gdf = position_df.groupby('stock_code')
+            gdf = position_df.groupby(level=0)
             if stock_code in gdf.groups:
                 ret_df = gdf.get_group(stock_code)
             else:
@@ -481,7 +489,8 @@ class GZZQClientTrader():
         获取全部委托单信息
         :return: 
         """
-        apply_df = self._get_csv_data(sub_win_from='holding', sub_win_to='apply')
+        # apply_df = self._get_csv_data(sub_win_from='holding', sub_win_to='apply')
+        apply_df, _ = self._get_csv_data()
         if apply_df is not None:
             apply_df.rename(columns={'委托日期': 'apply_date',
                                            '委托时间': 'apply_time',
@@ -513,71 +522,67 @@ class GZZQClientTrader():
     def clean_csv_cache(self):
         self._csv_data_dic = {}
 
-    def _get_csv_data(self, sub_win_from, sub_win_to, fast_mode=False, refresh=False) -> pd.DataFrame:
+    def _get_csv_data(self, win_name_list=['apply', 'holding'], refresh=False) -> pd.DataFrame:
         """
         获取全部委托单信息
-        :param sub_win_from: 
-        :param sub_win_to: 
-        :param fast_mode: 默认为 False， 为True时，将不进行窗口切换，只有在确认无需进行窗口切换的情况下才能开启次项 
+        :param win_name_list: 
         :param refresh: 默认False，强制刷新。不进行强制刷新的情况下，数据超过“self.csv_expire_timedelta”也会自动刷新
         :return: 
         """
-        is_ok = False
-        if sub_win_to in self._csv_data_dic:
-            update_datetime, data_df = self._csv_data_dic[sub_win_to]
-            if update_datetime + self.csv_expire_timedelta > datetime.now():
-                is_ok = True
-                data_df = data_df.copy()
+        data_df_list = []
+        datetime_now = datetime.now()
+        for win_name in win_name_list:
+            is_ok = False
+            if win_name in self._csv_data_dic:
+                update_datetime, data_df = self._csv_data_dic[win_name]
+                if update_datetime + self.csv_expire_timedelta > datetime_now:
+                    is_ok = True
+                    data_df = data_df.copy()
 
-        if (not is_ok) or refresh:
-            file_name = 'table.xls'
-            file_path = os.path.join(self.base_dir, file_name)
-            # 如果文件存在，将其删除
-            if os.path.exists(file_path):
-                os.remove(file_path)
-            # win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
-            # time.sleep(0.1)
-            # 多次尝试获取仓位
-            # fast_mode = True
-            for try_count in range(3):
-                if not fast_mode:
-                    self.goto_buy_win(sub_win=sub_win_from)
-                    time.sleep(0.5)
-                    self.goto_buy_win(sub_win=sub_win_to)
-                    time.sleep(0.5)
-                win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
-                time.sleep(0.2)
-                shell = GZZQClientTrader._set_foreground_window(self.position_list_hwnd)
-
-                # Ctrl +s 热键保存
-                shell.SendKeys('^s')
-                # 停顿时间太短可能导致窗口还没打开，或者及时窗口打开，但最终保存的文件大小为0
-                time.sleep(1)
-                # Enter 热键 切断
-                shell.SendKeys('~')
-                time.sleep(0.2)
-                for try_count_sub in range(3):
-                    if not os.path.exists(file_path):
-                        log.warning('文件：%s 没有找到，重按 Enter 尝试', file_path)
-                        shell.SendKeys('~')
-                        time.sleep(0.2)
-                    else:
-                        break
-                # 检查文件是否ok
+            if (not is_ok) or refresh:
+                file_name = 'table.xls'
+                file_path = os.path.join(self.base_dir, file_name)
+                # 如果文件存在，将其删除
                 if os.path.exists(file_path):
-                    if os.path.getsize(file_path) > 0:
-                        break
-                    else:
-                        os.remove(file_path)
+                    os.remove(file_path)
+                # win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
+                # time.sleep(0.1)
+                # 多次尝试获取仓位
+                # fast_mode = True
+                for try_count in range(3):
+                    self.goto_buy_win(sub_win=win_name)
+                    time.sleep(0.5)
+                    win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
+                    time.sleep(0.2)
+                    shell = GZZQClientTrader._set_foreground_window(self.position_list_hwnd)
 
-                # 如果第一次尝试生成文件失败，则开始取消 fast_mode
-                log.warning('文件：%s 没有找到，取消fast_mode模式，重按尝试', file_path)
-                fast_mode = False
-
-            data_df = GZZQClientTrader.read_export_csv(file_path)
-            if data_df is not None:
-                self._csv_data_dic[sub_win_to] = (datetime.now(), data_df.copy())  # 暂不考试 deep copy
-        return data_df
+                    # Ctrl +s 热键保存
+                    shell.SendKeys('^s')
+                    # 停顿时间太短可能导致窗口还没打开，或者及时窗口打开，但最终保存的文件大小为0
+                    time.sleep(1)
+                    # Enter 热键 切断
+                    shell.SendKeys('~')
+                    time.sleep(0.2)
+                    for try_count_sub in range(3):
+                        if not os.path.exists(file_path):
+                            log.warning('文件：%s 没有找到，重按 Enter 尝试', file_path)
+                            shell.SendKeys('~')
+                            time.sleep(0.2)
+                        else:
+                            break
+                    # 检查文件是否ok
+                    if os.path.exists(file_path):
+                        if os.path.getsize(file_path) > 0:
+                            break
+                        else:
+                            os.remove(file_path)
+                # 读取文件
+                data_df = GZZQClientTrader.read_export_csv(file_path)
+                # 保存 cache
+                if data_df is not None:
+                    self._csv_data_dic[win_name] = (datetime_now, data_df.copy())  # 暂不考虑 deep copy
+            data_df_list.append(data_df)
+        return data_df_list
 
     @staticmethod
     def read_export_csv(file_path):
@@ -695,12 +700,13 @@ class GZZQClientTrader():
 
         stock_bs_df = self.reform_order(stock_target_df)
         stock_bs_df = self.sort_order(stock_bs_df)
+        # 集合竞价时段 算法交易
         if config.setdefault('aggregate_auction', True):
             datetime_now = datetime.now()
             aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00',
                                                            '%Y-%m-%d %H:%M:%S')
-            # 集合竞价时段 算法交易
             if datetime.now() < aggregate_auction_datetime:
+                log.info('开始集合竞价交易')
                 # 每个股票执行独立的算法交易
                 for idx in stock_bs_df.index:
                     bs_s = stock_bs_df.ix[idx]
@@ -719,14 +725,20 @@ class GZZQClientTrader():
         config['deal_start_datetime'] = max([config['datetime_start'], start_datetime])
         config['deal_seconds'] = (config['deal_end_datetime'] - config['deal_start_datetime']).seconds
         # 开市时段 循环执行算法交易
+        self.init_twap()
+        log.info('开始交易时段算法交易')
         while datetime.now() < datetime_end:
             # 每个股票执行独立的算法交易
+            self.clean_csv_cache()
+            log.info('* ' * 30)
             for idx in stock_bs_df.index:
                 bs_s = stock_bs_df.ix[idx]
                 wap_mode = bs_s.wap_mode
                 if wap_mode in ('twap', 'twap_initiative'):
                     self.twap_initiative(bs_s, config)  # self.twap_initiative(bs_s, config)
-                elif wap_mode in ("twap_half_initiative", 'auto'):
+                elif wap_mode in ("twap_half_passive", 'auto'):
+                    self.twap_half_passive(bs_s, config)
+                elif wap_mode in ("twap_half_initiative"):
                     self.twap_half_initiative(bs_s, config)
                 else:
                     raise ValueError('%s) %s wap_mode %s error' % (idx, bs_s.name, wap_mode))
@@ -855,7 +867,7 @@ class GZZQClientTrader():
         order_vol, price = 0, ref_price
         limit_amount = limit_position * ref_price
         # 获取持仓信息
-        position_df = self.position
+        position_df = self.get_position(stock_code)
         if stock_code in position_df.index:
             # 如果股票存在持仓，轧差后下单手数
             holding_position = position_df.holding_position[stock_code]
@@ -943,6 +955,10 @@ class GZZQClientTrader():
 
         return order_vol, price
 
+    def init_twap(self):
+        self.clean_csv_cache()
+        self._stock_deal_datetime_dic = {}
+
     def twap_initiative(self, bs_s, config):
         """
         简单twap算法交易
@@ -989,6 +1005,93 @@ class GZZQClientTrader():
             price = price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
             log.debug('算法卖出 %s 买1委托价格 %f', stock_code, price)
             self.sell(stock_code, price, order_vol)
+
+    def twap_half_passive(self, bs_s, config):
+        """
+        第一时间段：自 deal_start_datetime 开始（至少2分钟，至多60% 的时间）：
+        首次执行时，先将历史挂单撤掉
+        买入：买1价挂单
+        卖出：卖1价挂单
+        每一轮次不撤单
+        
+        第二时间段：第一时间段之后的时间
+        一次性全部撤单
+        买入：买1价+0.01(1Move)挂单
+        卖出：卖1价-0.01(1Move)挂单
+        :param bs_s: 
+        :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
+        :return: 
+        """
+        stock_code = bs_s.name
+        final_position = bs_s.final_position
+        init_position = bs_s.init_position
+        direction = 1 if init_position < final_position else 0
+        ref_price = bs_s.ref_price
+        # gap_position 可能为负数
+        gap_position = final_position - init_position
+        min_move = get_min_move_unit(stock_code)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
+            return
+
+        datetime_now = datetime.now()
+        # 检查时间进度
+        section1_len_pct = 0.6
+        section1_time_spend = max([timedelta(minutes=2), timedelta(seconds=config['deal_seconds'] * section1_len_pct)])
+        section1_end_time = config['deal_start_datetime'] + section1_time_spend
+
+        if datetime_now < section1_end_time:
+            # 每只股票首次执行时，撤历史委托
+            if stock_code not in self._stock_deal_datetime_dic:
+                self.cancel_entrust(stock_code, direction)
+            self._stock_deal_datetime_dic[stock_code] = datetime.now()
+            # 计算该时段目标仓位
+            timedelta_consume = datetime_now - config['deal_start_datetime']
+            order_rate = timedelta_consume.seconds / section1_time_spend.seconds * 1.2 # 加速买入速率
+            if order_rate > 1:
+                order_rate = 1
+            elif order_rate < 0:
+                order_rate = 0
+            target_position = init_position + gap_position * order_rate
+            shift_price = 0
+        else:
+            # 每只股票首次进入第二时段时执行撤单
+            if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[stock_code] < section1_end_time:
+                self.cancel_entrust(stock_code, direction)
+            self._stock_deal_datetime_dic[stock_code] = datetime.now()
+            # 计算该时段目标仓位
+            target_position = final_position
+            shift_price = min_move if direction == 1 else -min_move
+
+        # 获取盘口价格
+        offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        if direction == 1:
+            order_price = offer_buy_list[0][0]
+        else:
+            order_price = offer_sell_list[0][0]
+        if math.isnan(order_price):
+            order_price = ref_price
+        # 设置目标价格
+        order_price = order_price + shift_price
+        # 计算买卖股票的 order_vol, price，根据最大持有金额来计算当前价格下，还可以买入多少股票
+        order_vol, order_price = self.calc_order_by_price(stock_code,
+                                                          ref_price=order_price,
+                                                          direction=direction,
+                                                          target_position=target_position,
+                                                          limit_position=final_position)
+
+        if not (math.isnan(order_vol) or order_vol <= 0 or math.isnan(order_price) or order_price <= 0):
+            # 执行买卖逻辑
+            if direction == 1:
+                order_price = order_price - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                # log.debug('算法买入 %s 买1委托价格 %f', stock_code_str, order_price)
+                self.buy(stock_code, order_price, order_vol,
+                         remark="算法买入 买1" + ('' if shift_price == 0 else '%+.3f' % shift_price))
+            else:
+                order_price = order_price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
+                # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
+                self.sell(stock_code, order_price, order_vol,
+                          remark="算法卖出 卖1" + ('' if shift_price == 0 else '%+.3f' % shift_price))
 
     def twap_half_initiative(self, bs_s, config):
         """
@@ -1252,12 +1355,12 @@ class GZZQClientTrader():
         gap_position = final_position - init_position
         # 将小额买入卖出过滤掉，除了清仓指令
         if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+            log.info('%s %s %d -> %d 参考价格：%.3f 已经达成目标仓位',
                      stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
             return
         if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
-            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
-                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            log.info('%s %s %d -> %d 参考价格：%.3f 参考金额：%.3f 单子太小，忽略',
+                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price, gap_position * ref_price)
             return
         self.cancel_entrust(stock_code, bs_s.direction)
         position_df = self.position
@@ -1297,13 +1400,13 @@ class GZZQClientTrader():
         gap_position = final_position - init_position
         # 将小额买入卖出过滤掉，除了清仓指令
         if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%f 已经达成目标仓位',
+            log.info('%s %s %d -> %d 参考价格：%.3f 已经达成目标仓位',
                      stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
             return True
         # 仅限于调仓阶段（建仓、清仓阶段不忽略小额单子）
         if final_position != 0 and init_position != 0 and abs(gap_position * ref_price) < self.ignore_mini_order:
-            log.info('%s %s %d -> %d 参考价格：%f 单子太小，忽略',
-                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+            log.info('%s %s %d -> %d 参考价格：%.3f 参考金额：%.3f 单子太小，忽略',
+                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price, gap_position * ref_price)
             return True
         return False
 
