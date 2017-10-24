@@ -45,6 +45,7 @@
 >- 路径及其他环境变量设置
 >- gzzq_clienttrader.py 文件 SHIFT_PRICE 字段设置为 0
 >- gzzq_clienttrader.py 文件 self.base_dir = r'd:\Downloads' 设置为文件保存默认路径
+>- 交易软件委托列表界面 勾线 仅显示可撤销委托
 
 ### 控制台操作程序
 仅针对广州证券
