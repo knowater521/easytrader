@@ -13,5 +13,6 @@ log.handlers.append(ch)
 
 from logging.handlers import TimedRotatingFileHandler
 flog = TimedRotatingFileHandler('trflog.log', when='D')
+flog.setFormatter(fmt)
 flog.suffix = "%Y-%m-%d_%H-%M.log"
 log.handlers.append(flog)
