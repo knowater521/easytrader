@@ -413,29 +413,38 @@ class GZZQClientTrader():
             return False
         return True
 
-    def cancel_entrust(self, stock_code, direction, ignore_small_apply=False):
+    def cancel_entrust(self, stock_code, direction, check_final_position=None):
         """
         撤单
         :param stock_code: str 股票代码
         :param direction: str 1 撤买， 0 撤卖，None 全撤
-        :param ignore_small_apply: bool 如果申报单已经部分成交，且未成交金额不够 ignore_mini_order 则不撤单
+        :param final_position: int 默认None，如果不为空，检查当前持仓+全部申请是否等于final_position，如果为成交金额小于 ignore_mini_order 则放弃撤单
         :return: bool 撤单信号是否发出
         """
-        if ignore_small_apply:
+        if check_final_position is not None:
+            position_df = self.get_position(stock_code)
             apply_df = self.get_apply(stock_code)
-            if apply_df is not None and apply_df.shape[0] > 0:
+            if position_df is None or position_df.shape[0] == 0:
+                holding_vol = 0
+            else:
+                holding_vol = position_df['holding_position'].sum()
+            if apply_df is not None and apply_df.shape[0] == 0:
+                apply_vol = 0
+                deal_vol = 0
+            else:
                 apply_vol = apply_df['apply_vol'].sum()
                 deal_vol = apply_df['deal_vol'].sum()
-                if deal_vol == apply_vol:
-                    log.warning('%s 累计申请数量：%d 已经全部成交，无需撤单', stock_code, apply_vol)
-                    return
                 apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
                 deal_amount = apply_df['deal_amount'].sum()
                 gap_amount = apply_amount - deal_amount
                 if gap_amount < self.ignore_mini_order:
-                    log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f',
+                    log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 取消撤单',
                                 stock_code, apply_amount, deal_amount, gap_amount)
                     return
+
+            if deal_vol == apply_vol:
+                log.warning('%s 累计申请数量：%d 已经全部成交，无需撤单', stock_code, apply_vol)
+                return
         try:
             win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
             time.sleep(0.2)
@@ -748,6 +757,9 @@ class GZZQClientTrader():
             log.info('* ' * 30)
             for idx in stock_bs_df.index:
                 bs_s = stock_bs_df.ix[idx]
+                # 将小额买入卖出过滤掉，除了建仓、清仓指令
+                if self.ignore_order(bs_s):
+                    return
                 wap_mode = bs_s.wap_mode
                 if wap_mode in ('twap', 'twap_initiative'):
                     self.twap_initiative(bs_s, config)  # self.twap_initiative(bs_s, config)
@@ -1004,7 +1016,7 @@ class GZZQClientTrader():
         elif order_rate < 0:
             order_rate = 0
         target_position = init_position + gap_position * order_rate
-        self.cancel_entrust(stock_code, bs_s.direction)
+        self.cancel_entrust(stock_code, direction, check_final_position=final_position)
         order_vol, price = self.calc_order_bs(stock_code,
                                               ref_price=ref_price,
                                               direction=direction,
@@ -1069,7 +1081,7 @@ class GZZQClientTrader():
         if datetime_now < section1_end_time:
             # 每只股票首次执行时，撤历史委托
             if stock_code not in self._stock_deal_datetime_dic:
-                self.cancel_entrust(stock_code, direction)
+                self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime.now()
             # 计算该时段目标仓位
             timedelta_consume = datetime_now - config['deal_start_datetime']
@@ -1083,7 +1095,7 @@ class GZZQClientTrader():
         else:
             # 每只股票首次进入第二时段时执行撤单
             if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[stock_code] < section1_end_time:
-                self.cancel_entrust(stock_code, direction)
+                self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime_now  # 防止出现时间差导致的漏洞
             # 计算该时段目标仓位
             target_position = final_position
@@ -1152,7 +1164,7 @@ class GZZQClientTrader():
             # 第一时段盘口价格±1 跳挂单
             # 每只股票首次执行时，撤历史委托
             if stock_code not in self._stock_deal_datetime_dic:
-                self.cancel_entrust(stock_code, direction)
+                self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime.now()
             # 计算该时段目标仓位
             timedelta_consume = datetime_now - config['deal_start_datetime']
@@ -1192,7 +1204,7 @@ class GZZQClientTrader():
             # 每只股票首次进入第二时段时执行撤单
             if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[
                 stock_code] < section1_end_time:
-                self.cancel_entrust(stock_code, direction)
+                self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime_now  # 防止出现时间差导致的漏洞
             # 计算该时段目标仓位
             target_position = final_position
@@ -1409,7 +1421,7 @@ class GZZQClientTrader():
             log.info('%s %s %d -> %d 参考价格：%.3f 参考金额：%.3f 单子太小，忽略',
                      stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price, gap_position * ref_price)
             return
-        self.cancel_entrust(stock_code, bs_s.direction)
+        self.cancel_entrust(stock_code, bs_s.direction, check_final_position=final_position)
         position_df = self.position
         if stock_code in position_df.index:
             order_vol = final_position - position_df.ix[stock_code].holding_position
