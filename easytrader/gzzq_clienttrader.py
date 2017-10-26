@@ -1125,6 +1125,7 @@ class GZZQClientTrader():
         :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
         :return: 
         """
+
         stock_code = bs_s.name
         final_position = bs_s.final_position
         init_position = bs_s.init_position
@@ -1136,6 +1137,7 @@ class GZZQClientTrader():
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
         if self.ignore_order(bs_s):
             return
+        key_price_last_period = 'apply_price_%s' % stock_code
 
         # 获取盘口价格
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
@@ -1170,7 +1172,6 @@ class GZZQClientTrader():
                 log.warning('未能获取%s盘口价格，参考价格：%.3f', stock_code, ref_price)
                 order_price = ref_price
             # 获取上一周期时的委托价格
-            key_price_last_period = 'apply_price_%s' % stock_code
             order_price_on_last_period = config.setdefault(key_price_last_period, ref_price)
             # 设置目标价格
             if direction == 1:
@@ -1288,11 +1289,11 @@ class GZZQClientTrader():
                 if direction == 1:
                     order_price = order_price - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
                     # log.debug('算法买入 %s 买1委托价格 %f', stock_code_str, order_price)
-                    self.buy(stock_code, order_price, order_vol, remark="集合买入 买1+%.3f" % min_move)
+                    self.buy(stock_code, order_price, order_vol, remark="集合买入 买1 %+.3f" % shift_price)
                 else:
                     order_price = order_price + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
                     # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
-                    self.sell(stock_code, order_price, order_vol, remark="集合卖出 卖1-%.3f" % min_move)
+                    self.sell(stock_code, order_price, order_vol, remark="集合卖出 卖1 %+.3f" % shift_price)
 
     def twap3_order(self, bs_s, config):
         """
