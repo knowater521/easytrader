@@ -12,8 +12,7 @@ import time
 import logging
 import pandas as pd
 from collections import OrderedDict
-
-logger = logging.getLogger()
+from easytrader.log import log
 
 
 def load_stock_order():
@@ -21,7 +20,7 @@ def load_stock_order():
     base_dir = './auto_order_dir'
     file_name_list = os.listdir(base_dir)
     if file_name_list is None:
-        logger.info('No file')
+        log.info('No file')
 
     data_df = None
     for file_name in file_name_list:
@@ -79,25 +78,26 @@ def main(config_path, use, debug=False):
         try:
             command_num = int(input("输入："))
             if command_num == 0:
-                print_green('退出')
+                log.info('退出')
                 break
             elif command_num == 1:
-                print_green('导入列表')
+                log.info('导入列表')
                 stock_target_df = load_stock_order()
                 print(stock_target_df)
             elif command_num == 2:
-                print_green('查询目标股票列表')
+                log.info('查询目标股票列表')
                 # position_df = user.position
                 print(stock_target_df)
             elif command_num == 3:
-                print_green('查询当前持仓')
+                log.info('查询当前持仓')
                 position_df = user.position
                 print(position_df)
             elif command_num == 4:
-                print_green('查询合并后交易列表')
+                log.info('查询合并后交易列表')
                 stock_bs_df = user.reform_order(stock_target_df)
-                print(stock_bs_df)
+                log.info('\n%s', stock_bs_df)
             elif command_num == 5:
+                log.info(command_num_desc_dic[command_num])
                 # 设置执行参数
                 # 为了让 datetime_start 等于实际开始执行时的“当前时间”，因此，直到开始执行才设置 datetime_start = datetime.now()
                 for _ in range(3):
@@ -139,17 +139,17 @@ def main(config_path, use, debug=False):
                 is_ok = inputYN()
                 if is_ok:
                     datetime_start = datetime.now() if datetime_start is None else datetime_start
-                    print_green('执行算法交易 开始')
+                    log.info('执行算法交易 开始')
                     config = {'datetime_end': datetime_end, 'datetime_start': datetime_start, 'interval': 10}
-                    print_green('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
+                    log.info('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
                     while datetime_start > datetime.now():
                         time.sleep(1)
                     user.auto_order(stock_target_df, config)
-                    print_green('执行算法交易 结束')
+                    log.info('执行算法交易 结束')
                 else:
-                    print_green('取消算法交易')
+                    log.info('取消算法交易')
             elif command_num == 6:
-                print_green('交易结果对比分析')
+                log.info(command_num_desc_dic[command_num])
                 stock_bs_df = user.reform_order(stock_target_df)
                 res_df = stock_bs_df[['sec_name', 'final_position', 'init_position', 'ref_price', 'cost_price']]
                 res_df['gap_position'] = (res_df['init_position'] - res_df['final_position']).apply(
@@ -163,15 +163,15 @@ def main(config_path, use, debug=False):
                                        'gap_position': '目标持仓差',
                                        'gap_price': '目标成本差',
                                        }, inplace=True)
-                print(res_df)
+                log.info('\n%s',res_df)
                 res_df.to_csv('对比执行结果.csv')
             elif command_num == 7:
-                print_green(command_num_desc_dic[command_num], )
+                log.info(command_num_desc_dic[command_num])
                 is_ok = inputYN()
                 if is_ok:
                     user.cancel_all_apply()
             elif command_num == 8:
-                print_green(command_num_desc_dic[command_num], )
+                log.info(command_num_desc_dic[command_num])
                 is_ok = inputYN()
                 if is_ok:
                     datetime_start = datetime.now()
@@ -181,7 +181,7 @@ def main(config_path, use, debug=False):
                               'wap_mode': 'twap_half_initiative'}
                     user.auto_order(stock_target_df, config)
             elif command_num == 9:
-                print_green(command_num_desc_dic[command_num], )
+                log.info(command_num_desc_dic[command_num])
                 is_ok = inputYN()
                 if is_ok:
                     datetime_start = datetime.now()
@@ -191,9 +191,9 @@ def main(config_path, use, debug=False):
                               'wap_mode': 'twap_initiative'}
                     user.auto_order(stock_target_df, config)
             else:
-                print_red('未知命令')
+                log.warning('未知命令')
         except:
-            logger.exception('')
+            log.exception('')
 
 
 def inputYN():
