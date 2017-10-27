@@ -35,6 +35,9 @@ class GZZQClientTrader():
         self.lpClassName = None
         # self.base_dir 仅用于在导出持仓信息文件时默认的保存目录
         self.base_dir = r'd:\Downloads'
+        # 最小阈值金额，小于改金额的订单将被一次性下单
+        self.min_threshold_amount = 50000
+        # 最小忽略金额，小于该金额的订单将被忽略
         self.ignore_mini_order = 10000
         self._csv_data_dic = {}
         # 统计twap期间的交易情况
@@ -428,7 +431,7 @@ class GZZQClientTrader():
                 holding_vol = 0
             else:
                 holding_vol = position_df['holding_position'].sum()
-            if apply_df is not None and apply_df.shape[0] == 0:
+            if apply_df is None or apply_df.shape[0] == 0:
                 apply_vol = 0
                 deal_vol = 0
             else:
@@ -694,7 +697,7 @@ class GZZQClientTrader():
             else:
                 time.sleep(0.3)
         else:
-            log.warning('get_bs_offer_data(%s) has no bs offer data' % stock_code)
+            log.warning('%s has no bs offer data' % stock_code)
         return offer_buy_list, offer_sell_list
 
     def auto_order(self, stock_target_df, config):
@@ -759,7 +762,7 @@ class GZZQClientTrader():
                 bs_s = stock_bs_df.ix[idx]
                 # 将小额买入卖出过滤掉，除了建仓、清仓指令
                 if self.ignore_order(bs_s):
-                    return
+                    continue
                 wap_mode = bs_s.wap_mode
                 if wap_mode in ('twap', 'twap_initiative'):
                     self.twap_initiative(bs_s, config)  # self.twap_initiative(bs_s, config)
@@ -936,7 +939,7 @@ class GZZQClientTrader():
             if apply_amount_limit - apply_amount_target < self.ignore_mini_order:
                 apply_amount_target = apply_amount_limit
             # 计算最小买入手数
-            order_vol_min = math.ceil(20000 / ref_price / 100) * 100
+            order_vol_min = math.ceil(self.min_threshold_amount / ref_price / 100) * 100
             # 计算最大买入手数
             apply_vol_limit = math.floor(apply_amount_limit / ref_price / 100) * 100
             if order_vol_min > apply_vol_limit:
@@ -987,6 +990,38 @@ class GZZQClientTrader():
         self.clean_csv_cache()
         self._stock_deal_datetime_dic = {}
 
+    def calc_order_rate(self, bs_s, config, speed=1):
+        """
+        如果下单金额小于 min_threshold_amount 直接全部下单
+        否则，按照时间按比例下单
+        :param bs_s: 
+        :param config: 
+        :param speed: 默认1：加速买入、卖出 
+        :return: 
+        """
+        final_position = bs_s.final_position
+        init_position = bs_s.init_position
+        direction = 1 if init_position < final_position else 0
+        if init_position == final_position:
+            return 0
+        ref_price = bs_s.ref_price
+        # gap_position 可能为负数
+        gap_position = final_position - init_position
+        gap_amount = abs(gap_position) * ref_price
+        if gap_amount < self.min_threshold_amount:
+            order_rate = 1
+        else:
+            # 检查时间进度
+            datetime_now = datetime.now()
+            timedelta_consume = datetime_now - config['deal_start_datetime']
+            order_rate = timedelta_consume.seconds / config['deal_seconds'] * speed
+
+            if order_rate > 1:
+                order_rate = 1
+            elif order_rate < 0:
+                order_rate = 0
+        return order_rate
+
     def twap_initiative(self, bs_s, config):
         """
         简单twap算法交易
@@ -1006,15 +1041,8 @@ class GZZQClientTrader():
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
         if self.ignore_order(bs_s):
             return
-
-        # 检查时间进度
-        datetime_now = datetime.now()
-        timedelta_consume = datetime_now - config['deal_start_datetime']
-        order_rate = timedelta_consume.seconds / config['deal_seconds']
-        if order_rate > 1:
-            order_rate = 1
-        elif order_rate < 0:
-            order_rate = 0
+        # 计算下单比例
+        order_rate = self.calc_order_rate(bs_s, config)
         target_position = init_position + gap_position * order_rate
         self.cancel_entrust(stock_code, direction, check_final_position=final_position)
         order_vol, price = self.calc_order_bs(stock_code,
@@ -1082,14 +1110,9 @@ class GZZQClientTrader():
             # 每只股票首次执行时，撤历史委托
             if stock_code not in self._stock_deal_datetime_dic:
                 self.cancel_entrust(stock_code, direction, check_final_position=final_position)
-            self._stock_deal_datetime_dic[stock_code] = datetime.now()
-            # 计算该时段目标仓位
-            timedelta_consume = datetime_now - config['deal_start_datetime']
-            order_rate = timedelta_consume.seconds / section1_time_spend.seconds * 1.2 # 加速买入速率
-            if order_rate > 1:
-                order_rate = 1
-            elif order_rate < 0:
-                order_rate = 0
+            self._stock_deal_datetime_dic[stock_code] = datetime_now  # 防止出现时间差导致的漏洞
+            # 计算下单比例
+            order_rate = self.calc_order_rate(bs_s, config, speed=2)
             target_position = init_position + gap_position * order_rate
             shift_price = 0
         else:
@@ -1133,6 +1156,7 @@ class GZZQClientTrader():
         执行剩余最后1分钟时
         撤单买入：买1价+0.01(1Move)挂单
         撤单卖出：卖1价-0.01(1Move)挂单
+        挂单原则 
         :param bs_s: 
         :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
         :return: 
@@ -1167,12 +1191,8 @@ class GZZQClientTrader():
                 self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime.now()
             # 计算该时段目标仓位
-            timedelta_consume = datetime_now - config['deal_start_datetime']
-            order_rate = timedelta_consume.seconds / section1_time_spend.seconds * 1.2  # 加速买入速率
-            if order_rate > 1:
-                order_rate = 1
-            elif order_rate < 0:
-                order_rate = 0
+            # 计算下单比例
+            order_rate = self.calc_order_rate(bs_s, config, speed=1.5)
             target_position = init_position + gap_position * order_rate
             # 设置价格
             shift_price = min_move if direction == 1 else -min_move
@@ -1241,6 +1261,7 @@ class GZZQClientTrader():
     def wap_aggregate_auction(self, bs_s, config):
         """
         集合竞价9：25分前，根据盘口加±0.01(1Move)主动挂单（如果没有盘口则不挂单）
+        一次性全部委托挂单
         :param bs_s: 
         :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
         :return: 
@@ -1284,11 +1305,11 @@ class GZZQClientTrader():
             # 集合竞价盘口价格±0.01(1 move)
             if direction == 1:
                 apply_vol_allow = abs(gap_position) - apply_vol_has
-                order_vol = min([apply_vol_allow, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)]) if offer_vol > 0 else apply_vol_allow;
+                order_vol = apply_vol_allow  # min([apply_vol_allow, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)]) if offer_vol > 0 else apply_vol_allow;
                 order_price = ref_price if math.isnan(offer_price) else offer_price + shift_price
             else:
                 apply_vol_allow = abs(gap_position) - apply_vol_has
-                order_vol = min([apply_vol_allow, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)]) if offer_vol > 0 else apply_vol_allow;
+                order_vol = apply_vol_allow  # min([apply_vol_allow, math.floor(math.ceil(offer_vol * 0.8 / 100) * 100)]) if offer_vol > 0 else apply_vol_allow;
                 order_price = ref_price if math.isnan(offer_price) else offer_price + shift_price
             if order_vol <= 0:
                 log.info('%s %s %d -> %d 已报数量：%d 买卖价格：%f 忽略',
@@ -1307,98 +1328,6 @@ class GZZQClientTrader():
                     # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
                     self.sell(stock_code, order_price, order_vol, remark="集合卖出 卖1 %+.3f" % shift_price)
 
-    def twap3_order(self, bs_s, config):
-        """
-        简单twap算法交易
-        每一次买入委托价格为买1价格及买1+0.01元（最小移动単位）各下一份
-        每一次卖出委托价格为卖1价格及卖1-0.01元（最小移动単位）各下一份
-        需要记住最新下单价格，
-        下一个时间周期到来时
-        如果最新买1价 == 上一周期的买1+0.01元 则本次继续使用上一周期的是的2个委托价格，否则，使用最新的买1价格及买1+0.01元（最小移动単位）
-        卖出逻辑同上
-        :param bs_s: 
-        :param config: {'timedelta_tot': 120, 'datetime_start': datetime.now(), 'interval': 10}
-        :return: 
-        """
-        datetime_now = datetime.now()
-        timedelta_consume = datetime_now - config['datetime_start']
-        order_rate = timedelta_consume.seconds / config['timedelta_tot']
-        if order_rate > 1:
-            order_rate = 1
-        stock_code = bs_s.name
-        final_position = bs_s.final_position
-        init_position = bs_s.init_position
-        direction = 1 if init_position < final_position else 0
-        # 将小额买入卖出过滤掉，除了清仓指令
-        ref_price = bs_s.ref_price
-        # gap_position 可能为负数
-        gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
-            return
-        target_position = init_position + gap_position * order_rate
-        # self.cancel_entrust(stock_code_str, bs_s.direction)
-        # 获取上一周期时的委托价格
-        key_price2_last_period = 'apply_price2_%s' % stock_code
-        price2_last_period = config.setdefault(key_price2_last_period, ref_price)
-
-        # 获取盘口价格
-        offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
-        if direction == 1:
-            price1 = offer_buy_list[0][0]
-        else:
-            price1 = offer_sell_list[0][0]
-        if math.isnan(price1):
-            price1 = ref_price
-        min_move = get_min_move_unit(stock_code)
-        if direction == 1:
-            # 如果当前 买1 价与上一次的 price2 委托价格相同，则继续使用上一个周期时的委托价格
-            # 此逻辑是为了防止出现过大的冲击成本，造成一轮轮的委托推动价格上涨
-            if price1 == price2_last_period:
-                price1 = price2_last_period - min_move
-            # 设置price2 价格
-            price2 = price1 + min_move
-        else:
-            # 如果当前 卖1 价与上一次的 price2 委托价格相同，则继续使用上一个周期时的委托价格
-            # 此逻辑是为了防止出现过大的冲击成本，造成一轮轮的委托推动价格上涨
-            if price1 == price2_last_period:
-                price1 = price2_last_period + min_move
-            price2 = price1 - min_move
-        # 获取两个价格分别下单数量
-        order_vol1, order_price1 = self.calc_order_by_price(stock_code,
-                                                            ref_price=price1,
-                                                            direction=direction,
-                                                            target_position=target_position,
-                                                            limit_position=final_position)
-        order_vol2, order_price2 = self.calc_order_by_price(stock_code,
-                                                            ref_price=price2,
-                                                            direction=direction,
-                                                            target_position=target_position,
-                                                            limit_position=final_position)
-
-        if not (math.isnan(order_vol1) or order_vol1 <= 0 or math.isnan(order_price1) or order_price1 <= 0):
-            # 执行买卖逻辑
-            if direction == 1:
-                order_price1 = order_price1 - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
-                # log.debug('算法买入 %s 买1委托价格 %f', stock_code_str, order_price1)
-                self.buy(stock_code, order_price1, order_vol1, remark="算法买入 买1")
-            else:
-                order_price1 = order_price1 + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
-                # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price1)
-                self.sell(stock_code, order_price1, order_vol1, remark="算法卖出 卖1")
-
-        if not (math.isnan(order_vol2) or order_vol2 <= 0 or math.isnan(order_price2) or order_price2 <= 0):
-            # 执行买卖逻辑
-            if direction == 1:
-                order_price2 = order_price2 - SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
-                # log.debug('算法买入 %s 买1+0.01委托价格 %f', stock_code_str, order_price2)
-                self.buy(stock_code, order_price2, order_vol2, remark="算法买入 买1+%.3f" % min_move)
-            else:
-                order_price2 = order_price2 + SHIFT_PRICE  # 测试用价格，调整一下防止真成交了
-                # log.debug('算法卖出 %s 卖1+0.01委托价格 %f', stock_code_str, order_price2)
-                self.sell(stock_code, order_price2, order_vol2, remark="算法卖出 卖1-%.3f" % min_move)
-            config[key_price2_last_period] = order_price2
-
     def deal_order_active(self, bs_s):
         """
         主动成交，撤销此前全部委托，卖2 或 买2 档价格直接委托下单
@@ -1412,16 +1341,10 @@ class GZZQClientTrader():
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
-        # 将小额买入卖出过滤掉，除了清仓指令
-        if gap_position == 0:
-            log.info('%s %s %d -> %d 参考价格：%.3f 已经达成目标仓位',
-                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price)
+        # 将小额买入卖出过滤掉，除了建仓、清仓指令
+        if self.ignore_order(bs_s):
             return
-        if abs(gap_position * ref_price) < self.ignore_mini_order and not (direction == 0 and final_position == 0):
-            log.info('%s %s %d -> %d 参考价格：%.3f 参考金额：%.3f 单子太小，忽略',
-                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price, gap_position * ref_price)
-            return
-        self.cancel_entrust(stock_code, bs_s.direction, check_final_position=final_position)
+        self.cancel_entrust(stock_code, direction, check_final_position=final_position)
         position_df = self.position
         if stock_code in position_df.index:
             order_vol = final_position - position_df.ix[stock_code].holding_position
