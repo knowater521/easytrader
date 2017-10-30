@@ -425,6 +425,8 @@ class GZZQClientTrader():
         :return: bool 撤单信号是否发出
         """
         if check_final_position is not None:
+            # 用于终止检查，直接执行 撤单指令
+            go_straight_to_cancel_action = False
             position_df = self.get_position(stock_code)
             apply_df = self.get_apply(stock_code)
             if position_df is None or position_df.shape[0] == 0:
@@ -437,17 +439,37 @@ class GZZQClientTrader():
             else:
                 apply_vol = apply_df['apply_vol'].sum()
                 deal_vol = apply_df['deal_vol'].sum()
-                apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
-                deal_amount = apply_df['deal_amount'].sum()
-                gap_amount = apply_amount - deal_amount
-                if gap_amount < self.ignore_mini_order:
-                    log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 取消撤单',
-                                stock_code, apply_amount, deal_amount, gap_amount)
-                    return
 
-            if deal_vol == apply_vol:
+                if direction == 1:
+                    if holding_vol + (apply_vol - deal_vol) > check_final_position:
+                        go_straight_to_cancel_action = True
+                        log.warning('%s 持仓：%d 累计申请买入：%d 已成交：%d 已持仓+申请但尚未成交数量大于最终数量%d，立刻撤单',
+                                    stock_code, holding_vol, apply_vol, deal_vol, check_final_position)
+                elif direction == 0:
+                    if holding_vol - (apply_vol - deal_vol) < check_final_position:
+                        go_straight_to_cancel_action = True
+                        log.warning('%s 持仓：%d 累计申请卖出：%d 已成交：%d 已持仓-申请但尚未成交数量小于最终数量%d，立刻撤单',
+                                    stock_code, holding_vol, apply_vol, deal_vol, check_final_position)
+
+                if not go_straight_to_cancel_action:
+                    apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
+                    deal_amount = apply_df['deal_amount'].sum()
+                    if deal_amount < self.ignore_mini_order:
+                        log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 累计成交金额太小，取消撤单',
+                                    stock_code, apply_amount, deal_amount, gap_amount)
+                        return False
+                    gap_amount = apply_amount - deal_amount
+                    if gap_amount < self.ignore_mini_order:
+                        log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 未成交金额太小，取消撤单',
+                                    stock_code, apply_amount, deal_amount, gap_amount)
+                        return False
+
+            if not go_straight_to_cancel_action and apply_vol > 0 and deal_vol == apply_vol:
+                # 正常情况想不应该出现这种情况，界面上"只显示可撤单委托"被勾选的情况下，应该不会显示已经完全成交的交易
                 log.warning('%s 累计申请数量：%d 已经全部成交，无需撤单', stock_code, apply_vol)
-                return
+                log.warning('请勾选委托界面上"只显示可撤单委托"选框')
+                self.clean_csv_cache()
+                return False
         try:
             win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
             time.sleep(0.2)
@@ -479,12 +501,12 @@ class GZZQClientTrader():
     def position(self) -> pd.DataFrame:
         return self.get_position()
 
-    def get_position(self, stock_code=None) -> pd.DataFrame:
+    def get_position(self, stock_code=None, refresh=False) -> pd.DataFrame:
         """
         获取当前持仓信息
         :return: 
         """
-        _, position_df = self._get_csv_data()
+        _, position_df = self._get_csv_data(refresh=refresh)
         if position_df is not None:
             position_df.rename(columns={'证券代码': 'stock_code',
                                               '证券名称': 'sec_name',
@@ -511,13 +533,13 @@ class GZZQClientTrader():
 
         return position_df
 
-    def get_apply(self, stock_code=None) -> pd.DataFrame:
+    def get_apply(self, stock_code=None, refresh=False) -> pd.DataFrame:
         """
         获取全部委托单信息
         :return: 
         """
         # apply_df = self._get_csv_data(sub_win_from='holding', sub_win_to='apply')
-        apply_df, _ = self._get_csv_data()
+        apply_df, _ = self._get_csv_data(refresh=refresh)
         if apply_df is not None:
             apply_df.rename(columns={'委托日期': 'apply_date',
                                            '委托时间': 'apply_time',
@@ -885,7 +907,7 @@ class GZZQClientTrader():
         return order_vol, price
 
     def calc_order_by_price(self, stock_code, ref_price, direction, target_position, limit_position,
-                            include_apply=True):
+                            include_apply=True, refresh=True):
         """
         计算买卖股票的 order_vol, price，根据最大持有金额来计算当前价格下，还可以买入多少股票
         :param stock_code: 
@@ -893,12 +915,14 @@ class GZZQClientTrader():
         :param direction: 
         :param target_position: 
         :param limit_position:  对于买入来说，最大持有仓位，对于卖出来说，最低持有仓位
+        :param include_apply: 计算申请单数量
+        :param refresh: 强制刷新仓位
         :return: 
         """
         order_vol, price = 0, ref_price
         limit_amount = limit_position * ref_price
         # 获取持仓信息
-        position_df = self.get_position(stock_code)
+        position_df = self.get_position(stock_code, refresh=refresh)
         if stock_code in position_df.index:
             # 如果股票存在持仓，轧差后下单手数
             holding_position = position_df.holding_position[stock_code]
@@ -912,11 +936,14 @@ class GZZQClientTrader():
             # order_vol_target = target_position
             # order_limit = abs(math.floor(limit_position))
         # 获取已申购金额
+        apply_vol_has = None
         if include_apply:
             apply_df = self.get_apply(stock_code)
             if apply_df is None or apply_df.shape[0] == 0:
+                apply_vol_has = 0
                 apply_amount_has = 0
             else:
+                apply_vol_has = apply_df.apply_vol.sum()
                 apply_amount_has = (apply_df.apply_vol * apply_df.apply_price).sum()
         else:
             apply_amount_has = 0
@@ -936,7 +963,7 @@ class GZZQClientTrader():
             # 计算目标买入金额
             apply_amount_target = target_position * ref_price - holding_amount - apply_amount_has
             # 如果目标买入金额与最大买入金额差距小于 最小忽略金额 则直接按最大下单金额执行
-            if apply_amount_limit - apply_amount_target < self.ignore_mini_order:
+            if apply_amount_limit - apply_amount_target < self.min_threshold_amount:
                 apply_amount_target = apply_amount_limit
             # 计算最小买入手数
             order_vol_min = math.ceil(self.min_threshold_amount / ref_price / 100) * 100
@@ -983,7 +1010,10 @@ class GZZQClientTrader():
                     apply_vol_target = apply_vol_limit
                 # 没有卖出金额太小忽略的限制
                 order_vol = apply_vol_target
-
+        log.debug('计算 %s %s申请数量：\n本次目标仓位：%d 最终目标仓位：%d 参考价格：%.3f\n 当前持仓：%d 正在委托数量：%d 预计委托数量：%d',
+                  stock_code, '买' if direction == 1 else '卖',
+                  target_position, limit_position, ref_price,
+                  holding_position, apply_vol_has, order_vol)
         return order_vol, price
 
     def init_twap(self):
