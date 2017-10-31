@@ -44,6 +44,8 @@ class GZZQClientTrader():
         self._stock_deal_datetime_dic = {}
         # 为了防止频繁获取 csv文件耽误时间，做了一个小的缓存机制，超时时间设置
         self.csv_expire_timedelta = timedelta(seconds=10)
+        # 涨跌停价格字典
+        self._stock_limit_price_dic = {}
 
     def prepare(self, config_path=None, user=None, password=None, exe_path='D:\TradeTools\广州证券网上交易\hexin.exe'):
         """
@@ -285,6 +287,8 @@ class GZZQClientTrader():
             [win32gui.GetDlgItem(offer_price_frame_hwnd, price_id), win32gui.GetDlgItem(offer_price_frame_hwnd, vol_id)]
             for price_id, vol_id in offer_sell_5_item_id_list
         ]
+        self.high_limit_price_hwnd = win32gui.GetDlgItem(offer_price_frame_hwnd, 1028)
+        self.low_limit_price_hwnd = win32gui.GetDlgItem(offer_price_frame_hwnd, 1029)
         # 仅用于测试买卖盘口函数是否有效
         # offer_buy_list, offer_sell_list = self.get_bs_offer_data()
         # print("offer_buy_list:\n", offer_buy_list)
@@ -454,11 +458,11 @@ class GZZQClientTrader():
                 if not go_straight_to_cancel_action:
                     apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
                     deal_amount = apply_df['deal_amount'].sum()
+                    gap_amount = apply_amount - deal_amount
                     if deal_amount < self.ignore_mini_order:
                         log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 累计成交金额太小，取消撤单',
                                     stock_code, apply_amount, deal_amount, gap_amount)
                         return False
-                    gap_amount = apply_amount - deal_amount
                     if gap_amount < self.ignore_mini_order:
                         log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 未成交金额太小，取消撤单',
                                     stock_code, apply_amount, deal_amount, gap_amount)
@@ -703,6 +707,11 @@ class GZZQClientTrader():
         return self.project_copy_data(data)
 
     def get_bs_offer_data(self, stock_code):
+        """
+        获取股票当前盘口价格，同时获取当日涨跌停价格
+        :param stock_code: 
+        :return: 
+        """
         win32gui.SendMessage(self.buy_stock_code_hwnd, win32con.WM_SETTEXT, None, stock_code)  # 输入买入代码
         win32gui.SendMessage(self.refresh_entrust_hwnd, win32con.BM_CLICK, None, None)  # 刷新持仓
         time.sleep(0.5)
@@ -714,13 +723,29 @@ class GZZQClientTrader():
             offer_sell_list = [[helpers.get_text_by_hwnd(hwnd_price, cast=float),
                                 helpers.get_text_by_hwnd(hwnd_vol, cast=float)]
                                for hwnd_price, hwnd_vol in self.offer_sell_5_hwnd_list]
-            if not math.isnan(offer_buy_list[0][0]):
+            high_limit_price = helpers.get_text_by_hwnd(self.high_limit_price_hwnd, cast=float)
+            low_limit_price = helpers.get_text_by_hwnd(self.low_limit_price_hwnd, cast=float)
+            if not (math.isnan(offer_buy_list[0][0]) and math.isnan(high_limit_price) and math.isnan(low_limit_price)):
+                self._stock_limit_price_dic[stock_code] = (high_limit_price, low_limit_price)
                 break
             else:
                 time.sleep(0.3)
         else:
             log.warning('%s has no bs offer data' % stock_code)
         return offer_buy_list, offer_sell_list
+
+    def get_limit_price(self, stock_code):
+        """
+        获取当日股票涨跌停价格
+        :return: 
+        """
+        if stock_code not in self._stock_limit_price_dic:
+            self.get_bs_offer_data(stock_code)
+        if stock_code in self._stock_limit_price_dic:
+            high_limit_price, low_limit_price = self._stock_limit_price_dic[stock_code]
+        else:
+            high_limit_price, low_limit_price = None, None
+        return high_limit_price, low_limit_price
 
     def auto_order(self, stock_target_df, config):
         """
@@ -883,6 +908,12 @@ class GZZQClientTrader():
 
         # 获取盘口价格
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 获取涨跌停价格
+        high_limit_price, low_limit_price = self.get_limit_price(stock_code)
+        #  如果价格已经涨停则不买卖
+        if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
+            log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
+            return order_vol, price
         # 手续费 万2.5的情况下，最低5元，因此最少每单价格在2W以上
         if direction == 1:
             price = offer_sell_list[0][0]
@@ -1122,6 +1153,12 @@ class GZZQClientTrader():
 
         # 获取盘口价格
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 获取涨跌停价格
+        high_limit_price, low_limit_price = self.get_limit_price(stock_code)
+        #  如果价格已经涨停则不买卖
+        if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
+            log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
+            return
         if direction == 1:
             order_price = offer_buy_list[0][0]
         else:
@@ -1207,6 +1244,12 @@ class GZZQClientTrader():
 
         # 获取盘口价格
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 获取涨跌停价格
+        high_limit_price, low_limit_price = self.get_limit_price(stock_code)
+        #  如果价格已经涨停则不买卖
+        if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
+            log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
+            return
 
         # 检查时间进度
         datetime_now = datetime.now()
@@ -1313,6 +1356,12 @@ class GZZQClientTrader():
         if datetime_now < aggregate_auction_datetime:
             # 检查当前时刻是否超过 集合竞价 时间
             offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+            # 获取涨跌停价格
+            high_limit_price, low_limit_price = self.get_limit_price(stock_code)
+            #  如果价格已经涨停则不买卖
+            if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
+                log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
+                return
             if direction == 1:
                 offer_price = offer_buy_list[0][0]
                 offer_vol = offer_buy_list[0][1]
@@ -1382,6 +1431,10 @@ class GZZQClientTrader():
             order_vol = final_position
         direction = 1 if order_vol > 0 else 0
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        #  如果价格已经涨停则不买卖
+        if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
+            log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
+            return
         # 主动成交选择买卖五档价格中的二挡买卖价格进行填报
         if direction == 1:
             price = offer_sell_list[1][0]
