@@ -43,6 +43,18 @@ def load_stock_order():
     return data_df
 
 
+def validate_time(ctx, param, value: str):
+    try:
+        time_obj = None if value.strip() == "" else datetime.strptime(
+        datetime.now().strftime('%Y-%m-%d ') + value, '%Y-%m-%d %H:%M:%S')
+        return time_obj
+    except:
+        raise click.BadParameter('时间格式：HH:MM:SS')
+
+def abort_if_false(ctx, param, value):
+    if not value:
+        ctx.abort()
+
 # @click.command()
 # @click.option('--use', help='指定券商 [ht, yjb, yh, gzzq]')
 # @click.option('--prepare', type=click.Path(exists=True), help='指定登录账户文件路径')
@@ -96,58 +108,86 @@ def main(config_path, use, debug=False):
                 log.info('查询合并后交易列表')
                 stock_bs_df = user.reform_order(stock_target_df)
                 log.info('\n%s', stock_bs_df)
+            # elif command_num == 5:
+            #     log.info(command_num_desc_dic[command_num])
+            #     # 设置执行参数
+            #     # 为了让 datetime_start 等于实际开始执行时的“当前时间”，因此，直到开始执行才设置 datetime_start = datetime.now()
+            #     for _ in range(3):
+            #         try:
+            #             datetime_start_str = input("起始执行时间(HH:MM:SS)(默认为当前时间)：")
+            #             datetime_start = None if datetime_start_str == "" else datetime.strptime(
+            #                 datetime.now().strftime('%Y-%m-%d ') + datetime_start_str, '%Y-%m-%d %H:%M:%S')
+            #             break
+            #         except:
+            #             print_red("%s 格式不对" % datetime_start_str)
+            #     else:
+            #         continue
+            #
+            #     for _ in range(3):
+            #         try:
+            #             datetime_end_str = input("结束执行时间(HH:MM:SS)(默认为9:35)：")
+            #             datetime_end_str = "9:35:00" if datetime_end_str is "" else datetime_end_str
+            #             datetime_end = datetime.strptime(
+            #                 datetime.now().strftime('%Y-%m-%d ') + datetime_end_str, '%Y-%m-%d %H:%M:%S')
+            #             break
+            #         except:
+            #             print_red("%s 格式不对" % datetime_end_str)
+            #     else:
+            #         continue
+            #
+            #     # timedelta_tot_str = input("执行持续时长(秒)(默认120)：")
+            #     # timedelta_tot = 120 if timedelta_tot_str == "" else int(timedelta_tot_str)
+            #
+            #     for _ in range(3):
+            #         try:
+            #             interval_str = input("执行间隔时长(秒)(默认10)：")
+            #             interval = 10 if interval_str == "" else int(interval_str)
+            #             break
+            #         except:
+            #             print_red("%s 格式不对" % interval_str)
+            #     else:
+            #         continue
+            #
+            #     for _ in range(3):
+            #         try:
+            #             interval_str = input("执行买卖方向 0 买卖 / 1 只买 / 2 只卖（默认0）：")
+            #             interval = 0 if interval_str == "" else int(interval_str)
+            #             if interval not in (0, 1, 2):
+            #                 print_red('%d 输入错误', interval)
+            #             break
+            #         except:
+            #             print_red("%s 格式不对" % interval_str)
+            #     else:
+            #         continue
+            #
+            #     is_ok = inputYN()
+            #     if is_ok:
+            #         datetime_start = datetime.now() if datetime_start is None else datetime_start
+            #         log.info('执行算法交易 开始')
+            #         config = {'datetime_end': datetime_end, 'datetime_start': datetime_start, 'interval': 10}
+            #         log.info('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
+            #         while datetime_start > datetime.now():
+            #             time.sleep(1)
+            #         user.auto_order(stock_target_df, config)
+            #         log.info('执行算法交易 结束')
+            #     else:
+            #         log.info('取消算法交易')
             elif command_num == 5:
-                log.info(command_num_desc_dic[command_num])
-                # 设置执行参数
-                # 为了让 datetime_start 等于实际开始执行时的“当前时间”，因此，直到开始执行才设置 datetime_start = datetime.now()
-                for _ in range(3):
-                    try:
-                        datetime_start_str = input("起始执行时间(HH:MM:SS)(默认为当前时间)：")
-                        datetime_start = None if datetime_start_str == "" else datetime.strptime(
-                            datetime.now().strftime('%Y-%m-%d ') + datetime_start_str, '%Y-%m-%d %H:%M:%S')
-                        break
-                    except:
-                        print_red("%s 格式不对" % datetime_start_str)
-                else:
-                    continue
-
-                for _ in range(3):
-                    try:
-                        datetime_end_str = input("结束执行时间(HH:MM:SS)(默认为9:35)：")
-                        datetime_end_str = "9:35:00" if datetime_end_str is "" else datetime_end_str
-                        datetime_end = datetime.strptime(
-                            datetime.now().strftime('%Y-%m-%d ') + datetime_end_str, '%Y-%m-%d %H:%M:%S')
-                        break
-                    except:
-                        print_red("%s 格式不对" % datetime_end_str)
-                else:
-                    continue
-
-                # timedelta_tot_str = input("执行持续时长(秒)(默认120)：")
-                # timedelta_tot = 120 if timedelta_tot_str == "" else int(timedelta_tot_str)
-
-                for _ in range(3):
-                    try:
-                        interval_str = input("执行间隔时长(秒)(默认10)：")
-                        interval = 10 if interval_str == "" else int(interval_str)
-                        break
-                    except:
-                        print_red("%s 格式不对" % interval_str)
-                else:
-                    continue
-
-                is_ok = inputYN()
-                if is_ok:
-                    datetime_start = datetime.now() if datetime_start is None else datetime_start
-                    log.info('执行算法交易 开始')
-                    config = {'datetime_end': datetime_end, 'datetime_start': datetime_start, 'interval': 10}
-                    log.info('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
-                    while datetime_start > datetime.now():
-                        time.sleep(1)
+                @click.command()
+                @click.option('--datetime_start', callback=validate_time, prompt="起始执行时间(HH:MM:SS)(空格为当前时刻)")
+                @click.option('--datetime_end', callback=validate_time, prompt="结束执行时间(HH:MM:SS)",
+                              default='9:35:00')
+                @click.option('--interval', type=click.INT, prompt="执行间隔时长(秒)", default=10)
+                @click.option('--side', type=click.IntRange(0,2), prompt="执行买卖方向 0 买卖 / 1 只买 / 2 只卖", default=0)
+                @click.option('--yes', is_flag=True, callback=abort_if_false, expose_value=True, default=True,
+                              prompt='确认开始执行')
+                def run_auto_order(**kwargs):
+                    config = kwargs.copy()
+                    if config['datetime_start'] is None:
+                        config['datetime_start'] = datetime.now()
                     user.auto_order(stock_target_df, config)
-                    log.info('执行算法交易 结束')
-                else:
-                    log.info('取消算法交易')
+
+                run_auto_order()
             elif command_num == 6:
                 log.info(command_num_desc_dic[command_num])
                 stock_bs_df = user.reform_order(stock_target_df)
