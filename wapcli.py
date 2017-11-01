@@ -51,9 +51,11 @@ def validate_time(ctx, param, value: str):
     except:
         raise click.BadParameter('时间格式：HH:MM:SS')
 
+
 def abort_if_false(ctx, param, value):
     if not value:
         ctx.abort()
+
 
 # @click.command()
 # @click.option('--use', help='指定券商 [ht, yjb, yh, gzzq]')
@@ -65,6 +67,7 @@ def main(config_path, use, debug=False):
         user.prepare(config_path)
     else:
         raise ValueError("prepare=%s, use=%s" % (config_path, use))
+
 
     # 根据输入命令执行，相应指令
     print_red = lambda x: cprint(x, 'red')
@@ -183,28 +186,23 @@ def main(config_path, use, debug=False):
                               prompt='确认开始执行')
                 def run_auto_order(**kwargs):
                     config = kwargs.copy()
-                    if config['datetime_start'] is None:
+                    if 'datetime_start' not in config or config['datetime_start'] is None:
                         config['datetime_start'] = datetime.now()
+                    datetime_start = config['datetime_start']
+                    if datetime_start > datetime.now():
+                        log.info('算法交易将于 %s 开始执行' % datetime_start.strftime('%Y-%m-%d %H:%M:%S'))
+                        while datetime_start > datetime.now():
+                            time.sleep(1)
+                    log.info("执行算法交易 开始")
                     user.auto_order(stock_target_df, config)
-
+                    log.info("执行算法交易 结束")
+                    log.info("对比执行结果")
+                    user.compare_result(stock_target_df)
                 run_auto_order()
             elif command_num == 6:
                 log.info(command_num_desc_dic[command_num])
-                stock_bs_df = user.reform_order(stock_target_df)
-                res_df = stock_bs_df[['sec_name', 'final_position', 'init_position', 'ref_price', 'cost_price']]
-                res_df['gap_position'] = (res_df['init_position'] - res_df['final_position']).apply(
-                    lambda x: '%d ' % x + ('↑' if x > 0 else '↓' if x < 0 else 'ok'))
-                res_df['gap_price'] = (res_df['cost_price'] - res_df['ref_price']).apply(
-                    lambda x: '%.3f ' % x + ('↑' if x > 0 else '↓' if x < 0 else ''))
-                res_df.rename(columns={'final_position': '目标仓位',
-                                       'init_position': '当前仓位',
-                                       'ref_price': '目标价格',
-                                       'cost_price': '持仓成本',
-                                       'gap_position': '目标持仓差',
-                                       'gap_price': '目标成本差',
-                                       }, inplace=True)
-                log.info('\n%s',res_df)
-                res_df.to_csv('对比执行结果.csv')
+
+                user.compare_result(stock_target_df)
             elif command_num == 7:
                 log.info(command_num_desc_dic[command_num])
                 is_ok = inputYN()
@@ -218,7 +216,7 @@ def main(config_path, use, debug=False):
                     datetime_end = datetime.now()
                     config = {'datetime_end': datetime_end, 'datetime_start': datetime_start,
                               'aggregate_auction': False, 'once': True, 'final_deal': False,
-                              'wap_mode': 'twap_half_initiative'}
+                              'side': 0}
                     user.auto_order(stock_target_df, config)
             elif command_num == 9:
                 log.info(command_num_desc_dic[command_num])
@@ -228,12 +226,14 @@ def main(config_path, use, debug=False):
                     datetime_end = datetime.now()
                     config = {'datetime_end': datetime_end, 'datetime_start': datetime_start,
                               'aggregate_auction': False, 'once': True, 'final_deal': False,
-                              'wap_mode': 'twap_initiative'}
+                              'side': 0}
                     user.auto_order(stock_target_df, config)
             else:
                 log.warning('未知命令')
+        except click.exceptions.Abort:
+            pass
         except:
-            log.exception('')
+            log.exception('command run exception')
 
 
 def inputYN():
