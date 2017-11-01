@@ -807,7 +807,7 @@ class GZZQClientTrader():
             for idx in stock_bs_df.index:
                 bs_s = stock_bs_df.ix[idx]
                 # 将小额买入卖出过滤掉，除了建仓、清仓指令
-                if self.ignore_order(bs_s):
+                if self.ignore_order(bs_s, config):
                     continue
                 wap_mode = bs_s.wap_mode
                 if wap_mode in ('twap', 'twap_initiative'):
@@ -830,7 +830,7 @@ class GZZQClientTrader():
             log.info("剩余未完成订单统一执行对手价买入")
             for idx in stock_bs_df.index:
                 bs_s = stock_bs_df.ix[idx]
-                self.deal_order_active(bs_s)
+                self.deal_order_active(bs_s, config)
 
     def sort_order(self, stock_bs_df):
         """
@@ -953,18 +953,12 @@ class GZZQClientTrader():
         limit_amount = limit_position * ref_price
         # 获取持仓信息
         position_df = self.get_position(stock_code, refresh=refresh)
-        if stock_code in position_df.index:
-            # 如果股票存在持仓，轧差后下单手数
-            holding_position = position_df.holding_position[stock_code]
-            holding_amount = position_df.market_value[stock_code]
-            # order_vol_target = target_position - holding_position
-            # order_limit = None if limit_position is None else abs(math.floor(limit_position - holding_position))
-        else:
+        if position_df is None or stock_code not in position_df.index:
             holding_position = 0
             holding_amount = 0
-            # 如果股票没有持仓，直接目标仓位
-            # order_vol_target = target_position
-            # order_limit = abs(math.floor(limit_position))
+        else:
+            holding_position = position_df.holding_position[stock_code]
+            holding_amount = position_df.market_value[stock_code]
         # 获取已申购金额
         apply_vol_has = None
         if include_apply:
@@ -1099,7 +1093,7 @@ class GZZQClientTrader():
         # gap_position 可能为负数
         gap_position = final_position - init_position
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
+        if self.ignore_order(bs_s, config):
             return
         # 计算下单比例
         order_rate = self.calc_order_rate(bs_s, config)
@@ -1147,7 +1141,7 @@ class GZZQClientTrader():
         gap_position = final_position - init_position
         min_move = get_min_move_unit(stock_code)
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
+        if self.ignore_order(bs_s, config):
             return
 
         # 获取盘口价格
@@ -1238,7 +1232,7 @@ class GZZQClientTrader():
         gap_position = final_position - init_position
         min_move = get_min_move_unit(stock_code)
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
+        if self.ignore_order(bs_s, config):
             return
         key_price_last_period = 'apply_price_%s' % stock_code
 
@@ -1343,16 +1337,12 @@ class GZZQClientTrader():
         final_position = bs_s.final_position
         init_position = bs_s.init_position
         direction = 1 if init_position < final_position else 0
-        # config["side"] 0 买卖 / 1 只买 / 2 只卖
-        if config["side"] not in ((0, 1) if direction == 1 else (0, 2)):
-            log.debug('%s 掉过%s', stock_code, '买入' if direction == 1 else '卖出')
-            return
         # 将小额买入卖出过滤掉，除了清仓指令
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
         gap_position = final_position - init_position
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
+        if self.ignore_order(bs_s, config):
             return
 
         datetime_now = datetime.now()
@@ -1412,7 +1402,7 @@ class GZZQClientTrader():
                     # log.debug('算法卖出 %s 卖1委托价格 %f', stock_code_str, order_price)
                     self.sell(stock_code, order_price, order_vol, remark="集合卖出 卖1 %+.3f" % shift_price)
 
-    def deal_order_active(self, bs_s):
+    def deal_order_active(self, bs_s, config):
         """
         主动成交，撤销此前全部委托，卖2 或 买2 档价格直接委托下单
         :param bs_s: 
@@ -1426,7 +1416,7 @@ class GZZQClientTrader():
         # gap_position 可能为负数
         gap_position = final_position - init_position
         # 将小额买入卖出过滤掉，除了建仓、清仓指令
-        if self.ignore_order(bs_s):
+        if self.ignore_order(bs_s, config):
             return
         self.cancel_entrust(stock_code, direction, check_final_position=final_position)
         position_df = self.position
@@ -1456,7 +1446,7 @@ class GZZQClientTrader():
             # log.debug('主动卖出 %s买2委托价格 %f', stock_code_str, price)
             self.sell(stock_code, price, abs(order_vol), remark="主动卖出 买2")
 
-    def ignore_order(self, bs_s):
+    def ignore_order(self, bs_s, config=None):
         """
         忽略小额订单，及已经达成目标的订单
         :param bs_s: 
@@ -1466,6 +1456,11 @@ class GZZQClientTrader():
         final_position = bs_s.final_position
         init_position = bs_s.init_position
         direction = 1 if init_position < final_position else 0
+        if config is not None:
+            # config["side"] 0 买卖 / 1 只买 / 2 只卖
+            if config["side"] not in ((0, 1) if direction == 1 else (0, 2)):
+                log.debug('%s 跳过%s', stock_code, '买入' if direction == 1 else '卖出')
+                return True
         # 将小额买入卖出过滤掉，除了清仓指令
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
@@ -1489,3 +1484,22 @@ class GZZQClientTrader():
             return
         for stock_code in apply_df.index:
             self.cancel_entrust(stock_code, direction=None)
+
+    def compare_result(self, stock_target_df):
+        if stock_target_df is None:
+            log.warning('stock_target_df is None')
+        stock_bs_df = self.reform_order(stock_target_df)
+        res_df = stock_bs_df[['sec_name', 'final_position', 'init_position', 'ref_price', 'cost_price']]
+        res_df['gap_position'] = (res_df['init_position'] - res_df['final_position']).apply(
+            lambda x: '%d ' % x + ('↑' if x > 0 else '↓' if x < 0 else 'ok'))
+        res_df['gap_price'] = (res_df['cost_price'] - res_df['ref_price']).apply(
+            lambda x: '%.3f ' % x + ('↑' if x > 0 else '↓' if x < 0 else ''))
+        res_df.rename(columns={'final_position': '目标仓位',
+                               'init_position': '当前仓位',
+                               'ref_price': '目标价格',
+                               'cost_price': '持仓成本',
+                               'gap_position': '目标持仓差',
+                               'gap_price': '目标成本差',
+                               }, inplace=True)
+        log.info('\n%s', res_df)
+        res_df.to_csv('对比执行结果.csv')
