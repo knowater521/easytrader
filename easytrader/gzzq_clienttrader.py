@@ -513,15 +513,15 @@ class GZZQClientTrader():
         _, position_df = self._get_csv_data(refresh=refresh)
         if position_df is not None:
             position_df.rename(columns={'证券代码': 'stock_code',
-                                              '证券名称': 'sec_name',
-                                              '股票余额': 'holding_position',
-                                              '可用余额': 'sellable_position',
-                                              '参考盈亏': 'profit',
-                                              '盈亏比例(%)': 'profit_rate',
-                                              '参考成本价': 'cost_price',
-                                              '成本金额': 'cost_tot',
-                                              '市价': 'market_price',
-                                              '市值': 'market_value'}, inplace=True)
+                                        '证券名称': 'sec_name',
+                                        '股票余额': 'holding_position',
+                                        '可用余额': 'sellable_position',
+                                        '参考盈亏': 'profit',
+                                        '盈亏比例(%)': 'profit_rate',
+                                        '参考成本价': 'cost_price',
+                                        '成本金额': 'cost_tot',
+                                        '市价': 'market_price',
+                                        '市值': 'market_value'}, inplace=True)
             position_df['stock_code'] = ['%06d' % stock_code for stock_code in position_df['stock_code']]
             position_df.set_index('stock_code', inplace=True)
         if stock_code is None:
@@ -534,8 +534,7 @@ class GZZQClientTrader():
                 ret_df = gdf.get_group(stock_code)
             else:
                 ret_df = None
-
-        return position_df
+        return ret_df
 
     def get_apply(self, stock_code=None, refresh=False) -> pd.DataFrame:
         """
@@ -546,17 +545,17 @@ class GZZQClientTrader():
         apply_df, _ = self._get_csv_data(refresh=refresh)
         if apply_df is not None:
             apply_df.rename(columns={'委托日期': 'apply_date',
-                                           '委托时间': 'apply_time',
-                                           '证券代码': 'stock_code',
-                                           '证券名称': 'sec_name',
-                                           '操作': 'operation',
-                                           '委托数量': 'apply_vol',
-                                           '委托价格': 'apply_price',
-                                           '合同编号': 'sid',
-                                           '成交数量': 'deal_vol',
-                                           '成交金额': 'deal_amount',
-                                           '成交均价': 'deal_price',
-                                           '委托状态': 'status'}, inplace=True)
+                                     '委托时间': 'apply_time',
+                                     '证券代码': 'stock_code',
+                                     '证券名称': 'sec_name',
+                                     '操作': 'operation',
+                                     '委托数量': 'apply_vol',
+                                     '委托价格': 'apply_price',
+                                     '合同编号': 'sid',
+                                     '成交数量': 'deal_vol',
+                                     '成交金额': 'deal_amount',
+                                     '成交均价': 'deal_price',
+                                     '委托状态': 'status'}, inplace=True)
             apply_df['stock_code'] = ['%06d' % stock_code for stock_code in apply_df['stock_code']]
             apply_df.set_index('stock_code', inplace=True)
         if stock_code is None:
@@ -1184,7 +1183,8 @@ class GZZQClientTrader():
             shift_price = 0
         else:
             # 每只股票首次进入第二时段时执行撤单
-            if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[stock_code] < section1_end_time:
+            if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[
+                stock_code] < section1_end_time:
                 self.cancel_entrust(stock_code, direction, check_final_position=final_position)
             self._stock_deal_datetime_dic[stock_code] = datetime_now  # 防止出现时间差导致的漏洞
             # 计算该时段目标仓位
@@ -1343,6 +1343,10 @@ class GZZQClientTrader():
         final_position = bs_s.final_position
         init_position = bs_s.init_position
         direction = 1 if init_position < final_position else 0
+        # config["side"] 0 买卖 / 1 只买 / 2 只卖
+        if config["side"] not in ((0, 1) if direction == 1 else (0, 2)):
+            log.debug('%s 掉过%s', stock_code, '买入' if direction == 1 else '卖出')
+            return
         # 将小额买入卖出过滤掉，除了清仓指令
         ref_price = bs_s.ref_price
         # gap_position 可能为负数
@@ -1352,7 +1356,8 @@ class GZZQClientTrader():
             return
 
         datetime_now = datetime.now()
-        aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00', '%Y-%m-%d %H:%M:%S')
+        aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00',
+                                                       '%Y-%m-%d %H:%M:%S')
         if datetime_now < aggregate_auction_datetime:
             # 检查当前时刻是否超过 集合竞价 时间
             offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
@@ -1431,6 +1436,8 @@ class GZZQClientTrader():
             order_vol = final_position
         direction = 1 if order_vol > 0 else 0
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 获取涨跌停价格
+        high_limit_price, low_limit_price = self.get_limit_price(stock_code)
         #  如果价格已经涨停则不买卖
         if high_limit_price == offer_buy_list[0][0] or high_limit_price == offer_sell_list[0][0]:
             log.warning('%s 已经处于涨停价格%.3f，取消卖出', stock_code, high_limit_price)
@@ -1471,7 +1478,8 @@ class GZZQClientTrader():
         # 仅限于调仓阶段（建仓、清仓阶段不忽略小额单子）
         if final_position != 0 and init_position != 0 and abs(gap_position * ref_price) < self.ignore_mini_order:
             log.info('%s %s %d -> %d 参考价格：%.3f 参考金额：%.3f 单子太小，忽略',
-                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price, gap_position * ref_price)
+                     stock_code, '买入' if direction == 1 else '卖出', init_position, final_position, ref_price,
+                     gap_position * ref_price)
             return True
         return False
 
