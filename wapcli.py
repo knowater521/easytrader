@@ -198,7 +198,7 @@ def main(config_path, use, debug=False):
                     log.info("执行算法交易 结束")
                     log.info("对比执行结果")
                     user.compare_result(stock_target_df)
-                run_auto_order()
+                run_auto_order(standalone_mode=False)
             elif command_num == 6:
                 log.info(command_num_desc_dic[command_num])
 
