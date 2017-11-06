@@ -988,8 +988,8 @@ class GZZQClientTrader():
         # 如果 目标委托数量 < 最小委托数量 则直接按 最小委托数量 执行
         if order_vol_target < order_vol_min:
             order_vol_target = order_vol_min
-        # 如果委托金额 < 最小忽略金额 则放弃
-        if order_vol_target * ref_price < self.ignore_mini_order:  # 如果去掉此限制，则需增加 apply_amount_target < 0 检查
+        # 如果委托金额 < 最小忽略金额 则放弃，清仓指令除外
+        if target_position > 0 and order_vol_target * ref_price < self.ignore_mini_order:  # 如果去掉此限制，则需增加 apply_amount_target < 0 检查
             return order_vol
 
         order_vol = order_vol_target
@@ -1062,6 +1062,13 @@ class GZZQClientTrader():
 
         # 获取盘口价格
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 如果盘口买一、卖一档差距大于1%则放弃挂单
+        price_sell1 = offer_sell_list[0][0]
+        price_buy1 = offer_buy_list[0][0]
+        if not (math.isnan(price_sell1) or math.isnan(price_buy1)):
+            if (price_sell1 / price_buy1) > 1.01:
+                log.warning('%s 买1/卖1: %.3f/%.3f 盘口差距过大，取消对手价买入')
+                return
         # 获取涨跌停价格
         high_limit_price, low_limit_price = self.get_limit_price(stock_code)
         #  如果价格已经涨停则不买卖
@@ -1273,6 +1280,7 @@ class GZZQClientTrader():
 
             remark_str = "算法 %s%+.3f" % ('买入 买1' if direction == 1 else '卖出 卖1', shift_price)
         else:
+            # 第二时段，以对手价委托
             # 每只股票首次进入第二时段时执行撤单
             if stock_code not in self._stock_deal_datetime_dic or self._stock_deal_datetime_dic[
                 stock_code] < section1_end_time:
@@ -1280,6 +1288,13 @@ class GZZQClientTrader():
             self._stock_deal_datetime_dic[stock_code] = datetime_now  # 防止出现时间差导致的漏洞
             # 计算该时段目标仓位
             target_position = final_position
+            # 如果盘口买一、卖一档差距大于1%则放弃挂单
+            price_sell1 = offer_sell_list[0][0]
+            price_buy1 = offer_buy_list[0][0]
+            if not(math.isnan(price_sell1) or math.isnan(price_buy1)):
+                if (price_sell1 / price_buy1) > 1.01:
+                    log.warning('%s 买1/卖1: %.3f/%.3f 盘口差距过大，取消对手价买入')
+                    return
             # 设置价格
             if direction == 1:
                 order_price = offer_sell_list[0][0]
@@ -1331,7 +1346,7 @@ class GZZQClientTrader():
             return
 
         datetime_now = datetime.now()
-        aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:25:00',
+        aggregate_auction_datetime = datetime.strptime(datetime_now.strftime('%Y-%m-%d ') + '9:24:58',
                                                        '%Y-%m-%d %H:%M:%S')
         if datetime_now < aggregate_auction_datetime:
             # 检查当前时刻是否超过 集合竞价 时间
@@ -1411,6 +1426,13 @@ class GZZQClientTrader():
             order_vol = final_position
         direction = 1 if order_vol > 0 else 0
         offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+        # 如果盘口买一、卖一档差距大于1%则放弃挂单
+        price_sell1 = offer_sell_list[0][0]
+        price_buy1 = offer_buy_list[0][0]
+        if not (math.isnan(price_sell1) or math.isnan(price_buy1)):
+            if (price_sell1 / price_buy1) > 1.01:
+                log.warning('%s 买1/卖1: %.3f/%.3f 盘口差距过大，取消对手价买入')
+                return
         # 获取涨跌停价格
         high_limit_price, low_limit_price = self.get_limit_price(stock_code)
         #  如果价格已经涨停则不买卖
