@@ -399,7 +399,7 @@ class GZZQClientTrader():
         if math.isnan(amount):
             log.error("%s 卖出金额 nan, %s", stock_code, remark)
             return
-        amount_str = str(amount // 100 * 100)
+        amount_str = str(amount)
         # price = str(price)
         price_str = '%.3f' % price
 
@@ -460,7 +460,7 @@ class GZZQClientTrader():
                     apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
                     deal_amount = apply_df['deal_amount'].sum()
                     gap_amount = apply_amount - deal_amount
-                    if deal_amount < self.ignore_mini_order:
+                    if 0 < deal_amount < self.ignore_mini_order:
                         log.warning('%s 累计申购金额：%.2f 累计成交金额：%.2f 剩余未成交金额：%.2f 累计成交金额太小，取消撤单',
                                     stock_code, apply_amount, deal_amount, gap_amount)
                         return False
