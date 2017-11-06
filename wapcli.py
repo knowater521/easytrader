@@ -28,7 +28,7 @@ def load_stock_order():
         if file_extension != '.csv':
             continue
         file_path = os.path.join(base_dir, file_name)
-        data_df_tmp = pd.read_csv(file_path, index_col=0, header=None, skipinitialspace=True)
+        data_df_tmp = pd.read_csv(file_path, index_col=0, header=0, skipinitialspace=True)
         if data_df is None:
             data_df_tmp.index = ['%06d' % stock_code for stock_code in data_df_tmp.index]
             data_df = data_df_tmp
