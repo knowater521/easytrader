@@ -874,6 +874,7 @@ class GZZQClientTrader():
                 # log.info('%s ref_price --> market_price %f', stock_code, stock_bs_df['market_price'][stock_code])
                 stock_bs_df['ref_price'][stock_code] = stock_bs_df['market_price'][stock_code]
         stock_bs_df = self.sort_order(stock_bs_df)
+        stock_bs_df = stock_bs_df[['sec_name', 'init_position', 'final_position', 'wap_mode', 'direction', 'sellable_position', 'ref_price', 'cost_price', 'market_price', 'profit_rate', 'profit', 'cost_tot', 'market_value', 'Weight']]
         return stock_bs_df
 
     def calc_order_bs(self, stock_code, ref_price, direction, target_position, limit_position=None):

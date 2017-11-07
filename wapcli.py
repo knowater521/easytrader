@@ -28,7 +28,7 @@ def load_stock_order():
         if file_extension != '.csv':
             continue
         file_path = os.path.join(base_dir, file_name)
-        data_df_tmp = pd.read_csv(file_path, index_col=0, header=0, skipinitialspace=True)
+        data_df_tmp = pd.read_csv(file_path, index_col='CodeDigit', header=0, skipinitialspace=True)
         if data_df is None:
             data_df_tmp.index = ['%06d' % stock_code for stock_code in data_df_tmp.index]
             data_df = data_df_tmp
@@ -38,8 +38,13 @@ def load_stock_order():
         backup_file_name = file_base_name + datetime.now().strftime('%Y-%m-%d %H_%M_%S') + file_extension + '.bak'
         os.rename(file_path, os.path.join(base_dir, backup_file_name))
     if data_df is not None:
-        data_df.rename(columns={k1: k2 for k1, k2 in
-                                zip(data_df.columns, ['final_position', 'ref_price', 'wap_mode'])}, inplace=True)
+        # data_df.rename(columns={k1: k2 for k1, k2 in
+        #                         zip(data_df.columns, ['final_position', 'ref_price', 'wap_mode'])}, inplace=True)
+        data_df.rename(columns={
+            'Lot': 'final_position',
+            'TargetPrice': 'ref_price',
+            'Algo': 'wap_mode',
+        }, inplace=True)
     return data_df
 
 
