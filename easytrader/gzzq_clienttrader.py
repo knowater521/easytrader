@@ -747,7 +747,7 @@ class GZZQClientTrader():
             high_limit_price, low_limit_price = None, None
         return high_limit_price, low_limit_price
 
-    def auto_order(self, stock_target_df, config):
+    def auto_order(self, stock_target_df: pd.DataFrame, config):
         """
         对每一只股票使用对应的算法交易
         :param stock_target_df: 每一行一只股票，列信息分别为 stock_code(index), final_position, price, wap_mode[对应不同算法名称]
@@ -755,8 +755,10 @@ class GZZQClientTrader():
         :return: 
         """
         # rename stock_target_df column name
-        if stock_target_df.shape[1] != 3:
-            raise ValueError('stock_target_df.shape[1] should be 3 but %d' % stock_target_df.shape[1])
+        col_name_set = set(stock_target_df.columns)
+        for col_name in {'ref_price', 'wap_mode', 'init_position', 'final_position', 'direction'}:
+            if col_name not in col_name_set:
+                raise ValueError('stock_target_df should has %s column', col_name)
         stock_target_df.rename(columns={k1: k2 for k1, k2 in
                                         zip(stock_target_df.columns, ['final_position', 'price', 'wap_mode'])})
         # stock_code, init_position, final_position, target_price, direction, wap_mode[对应不同算法名称]
@@ -874,7 +876,9 @@ class GZZQClientTrader():
                 # log.info('%s ref_price --> market_price %f', stock_code, stock_bs_df['market_price'][stock_code])
                 stock_bs_df['ref_price'][stock_code] = stock_bs_df['market_price'][stock_code]
         stock_bs_df = self.sort_order(stock_bs_df)
-        stock_bs_df = stock_bs_df[['sec_name', 'init_position', 'final_position', 'wap_mode', 'direction', 'sellable_position', 'ref_price', 'cost_price', 'market_price', 'profit_rate', 'profit', 'cost_tot', 'market_value', 'Weight']]
+        stock_bs_df = stock_bs_df[['sec_name', 'init_position', 'final_position', 'wap_mode', 'direction',
+                                   'sellable_position', 'ref_price', 'cost_price', 'market_price',
+                                   'profit_rate', 'profit', 'cost_tot', 'market_value']]
         return stock_bs_df
 
     def calc_order_bs(self, stock_code, ref_price, direction, target_position, limit_position=None):

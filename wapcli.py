@@ -38,13 +38,28 @@ def load_stock_order():
         backup_file_name = file_base_name + datetime.now().strftime('%Y-%m-%d %H_%M_%S') + file_extension + '.bak'
         os.rename(file_path, os.path.join(base_dir, backup_file_name))
     if data_df is not None:
+        has_error = False
         # data_df.rename(columns={k1: k2 for k1, k2 in
         #                         zip(data_df.columns, ['final_position', 'ref_price', 'wap_mode'])}, inplace=True)
+        # 重复数据检测
+        for name, index in data_df.groupby(level=0).groups.items():
+            if len(index) > 1:
+                has_error = True
+                log.error('%s 存在%d条重复数据', name, len(index))
+
+        col_name_set = set(data_df.columns)
+        for col_name in {'Lot', 'TargetPrice', 'Algo'}:
+            if col_name not in col_name_set:
+                has_error = True
+                log.error('stock_target_df should has %s column', col_name)
+        if has_error:
+            raise ValueError('csv 文件存在格式或内容问题')
         data_df.rename(columns={
             'Lot': 'final_position',
             'TargetPrice': 'ref_price',
             'Algo': 'wap_mode',
         }, inplace=True)
+
     return data_df
 
 
