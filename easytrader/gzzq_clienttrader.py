@@ -756,11 +756,11 @@ class GZZQClientTrader():
         """
         # rename stock_target_df column name
         col_name_set = set(stock_target_df.columns)
-        for col_name in {'ref_price', 'wap_mode', 'init_position', 'final_position', 'direction'}:
+        for col_name in {'ref_price', 'wap_mode', 'final_position'}:
             if col_name not in col_name_set:
-                raise ValueError('stock_target_df should has %s column', col_name)
-        stock_target_df.rename(columns={k1: k2 for k1, k2 in
-                                        zip(stock_target_df.columns, ['final_position', 'price', 'wap_mode'])})
+                raise ValueError('stock_target_df should has %s column' % col_name)
+        # stock_target_df.rename(columns={k1: k2 for k1, k2 in
+        #                                 zip(stock_target_df.columns, ['final_position', 'price', 'wap_mode'])})
         # stock_code, init_position, final_position, target_price, direction, wap_mode[对应不同算法名称]
         interval = config.setdefault('interval', 20)
         datetime_start = config.setdefault('datetime_start', datetime.now())
