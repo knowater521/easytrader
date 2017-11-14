@@ -43,7 +43,7 @@ class GZZQClientTrader():
         # 统计twap期间的交易情况
         self._stock_deal_datetime_dic = {}
         # 为了防止频繁获取 csv文件耽误时间，做了一个小的缓存机制，超时时间设置
-        self.csv_expire_timedelta = timedelta(seconds=10)
+        self.csv_expire_timedelta = timedelta(seconds=15)
         # 涨跌停价格字典
         self._stock_limit_price_dic = {}
 
@@ -783,16 +783,22 @@ class GZZQClientTrader():
                                                            '%Y-%m-%d %H:%M:%S')
             if datetime.now() < aggregate_auction_datetime:
                 log.info('开始集合竞价交易')
-                # 每个股票执行独立的算法交易
-                for idx in stock_bs_df.index:
-                    bs_s = stock_bs_df.ix[idx]
-                    self.wap_aggregate_auction(bs_s, config)
-                # 清空 csv 缓存
-                self.clean_csv_cache()
-                # 休息 继续
-                time.sleep(interval)
+                try:
+                    # 为提高集合竞价期间性能，降低刷新频率
+                    csv_expire_timedelta = self.csv_expire_timedelta
+                    self.csv_expire_timedelta = timedelta(seconds=120)
+                    # 每个股票执行独立的算法交易
+                    for idx in stock_bs_df.index:
+                        bs_s = stock_bs_df.ix[idx]
+                        self.wap_aggregate_auction(bs_s, config)
+                    # 清空 csv 缓存
+                    self.clean_csv_cache()
+                finally:
+                    self.csv_expire_timedelta = csv_expire_timedelta
+                    # 休息 继续
+                    time.sleep(interval)
 
-        start_datetime = datetime.strptime(datetime.now().strftime('%Y-%m-%d ') + '9:30:00', '%Y-%m-%d %H:%M:%S')
+        start_datetime = datetime.strptime(datetime.now().strftime('%Y-%m-%d ') + '9:30:02', '%Y-%m-%d %H:%M:%S')
         if datetime.now() < start_datetime:
             wait_seconds = (start_datetime - datetime.now()).seconds
             log.info('交易时段为开始，等待 %d 秒后启动', wait_seconds)
