@@ -423,6 +423,7 @@ class GZZQClientTrader():
     def cancel_entrust(self, stock_code, direction, check_final_position=None):
         """
         撤单
+        如果委托价格超出5档买卖盘价格则撤销
         :param stock_code: str 股票代码
         :param direction: str 1 撤买， 0 撤卖，None 全撤
         :param final_position: int 默认None，如果不为空，检查当前持仓+全部申请是否等于final_position，如果为成交金额小于 ignore_mini_order 则放弃撤单
@@ -432,12 +433,16 @@ class GZZQClientTrader():
         if check_final_position is not None:
             # 用于终止检查，直接执行 撤单指令
             go_straight_to_cancel_action = False
+
+            # 获取持仓状态
             position_df = self.get_position(stock_code)
             apply_df = self.get_apply(stock_code)
             if position_df is None or position_df.shape[0] == 0:
                 holding_vol = 0
             else:
                 holding_vol = position_df['holding_position'].sum()
+
+            # 获取委托单状态
             if apply_df is None or apply_df.shape[0] == 0:
                 apply_vol = 0
                 deal_vol = 0
@@ -445,6 +450,7 @@ class GZZQClientTrader():
                 apply_vol = apply_df['apply_vol'].sum()
                 deal_vol = apply_df['deal_vol'].sum()
 
+                # 如果 持仓 + 未成交委托总量 > 目标持仓（卖出相反）则撤单
                 if direction == 1:
                     if holding_vol + (apply_vol - deal_vol) > check_final_position:
                         go_straight_to_cancel_action = True
@@ -455,6 +461,44 @@ class GZZQClientTrader():
                         go_straight_to_cancel_action = True
                         log.warning('%s 持仓：%d 累计申请卖出：%d 已成交：%d 已持仓-申请但尚未成交数量小于最终数量%d，立刻撤单',
                                     stock_code, holding_vol, apply_vol, deal_vol, check_final_position)
+
+                # 如果委托价格超出5档买卖盘价格则撤单
+                if not go_straight_to_cancel_action:
+                    # 获取盘口价格
+                    offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+                    # 获取涨跌停价格
+                    high_limit_price, low_limit_price = self.get_limit_price(stock_code)
+                    if direction == 1:
+                        apply_price = min(apply_df['apply_price'])
+                        price_list = [pri for pri, vol in offer_buy_list if not math.isnan(pri)]
+                        if len(price_list) == 0:
+                            # 有可能跌停，有可能没有获取到盘口价格
+                            # 跌停的情况无需撤单，应该全部成交了
+                            # 没有获得盘口价格的情况，发一个warning
+                            log.warning('%s 目标持仓：%d -> %d 累计申请买入：%d 已成交：%d 没有获得盘口价格',
+                                        stock_code, holding_vol, check_final_position, apply_vol, deal_vol)
+                        else:
+                            # 获取第5档价格（最高一档价格）
+                            offer5_price = min(price_list)
+                            if apply_price < offer5_price:
+                                log.warning('%s 目标持仓：%d -> %d 累计申请买入：%d 已成交：%d 委托价格%.3f 盘口最低价%.3f',
+                                            stock_code, holding_vol, check_final_position, apply_vol, deal_vol, apply_price, offer5_price)
+                                go_straight_to_cancel_action = True
+                    elif direction == 0:
+                        apply_price = max(apply_df['apply_price'])
+                        price_list = [pri for pri, vol in offer_buy_list if not math.isnan(pri)]
+                        if len(price_list) == 0:
+                            # 有可能跌停，有可能没有获取到盘口价格
+                            # 跌停的情况无需撤单，应该全部成交了
+                            # 没有获得盘口价格的情况，发一个warning
+                            log.warning('%s 目标持仓：%d -> %d 累计申请买入：%d 已成交：%d 没有获得盘口价格',
+                                        stock_code, holding_vol, check_final_position, apply_vol, deal_vol)
+                        else:
+                            offer5_price = max(price_list)
+                            if apply_price < offer5_price:
+                                log.warning('%s 目标持仓：%d -> %d 累计申请卖出：%d 已成交：%d 委托价格%.3f 盘口最高价%.3f',
+                                            stock_code, holding_vol, check_final_position, apply_vol, deal_vol, apply_price, offer5_price)
+                                go_straight_to_cancel_action = True
 
                 if not go_straight_to_cancel_action:
                     apply_amount = (apply_df['apply_vol'] * apply_df['apply_price']).sum()
