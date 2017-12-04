@@ -11,7 +11,7 @@ import win32api
 import win32gui
 from io import StringIO
 import re
-
+import winsound
 import math
 import pandas as pd
 import pyperclip
@@ -23,6 +23,7 @@ from . import helpers
 from .log import log
 from win32_utils import find_window_whnd, filter_hwnd_func
 from mass_utils import get_min_move_unit
+from termcolor import cprint
 
 # 仅用于调试阶段，防止价格成交，进行买卖价格偏移使用
 SHIFT_PRICE = 0.0
@@ -46,6 +47,8 @@ class GZZQClientTrader():
         self.csv_expire_timedelta = timedelta(seconds=15)
         # 涨跌停价格字典
         self._stock_limit_price_dic = {}
+        # 控制监控器终止执行
+        self.monitor_running = True
 
     def prepare(self, config_path=None, user=None, password=None, exe_path='D:\TradeTools\广州证券网上交易\hexin.exe'):
         """
@@ -1881,7 +1884,7 @@ class GZZQClientTrader():
         for stock_code in apply_df.index:
             self.cancel_entrust(stock_code, direction=None)
 
-    def compare_result(self, stock_target_df):
+    def compare_result(self, stock_target_df: pd.DataFrame):
         if stock_target_df is None:
             log.warning('stock_target_df is None')
         stock_bs_df = self.reform_order(stock_target_df)
@@ -1899,3 +1902,45 @@ class GZZQClientTrader():
                                }, inplace=True)
         log.info('\n%s', res_df)
         res_df.to_csv('对比执行结果.csv')
+
+    def monitor_md(self, stock_target_df: pd.DataFrame, second_interval=60, warning_line=-0.01):
+        """
+        监控组合净值表现情况
+        :param stock_target_df: 
+        :param second_interval: 监测间隔
+        :param warning_line: 预警线
+        :return: 
+        """
+        if stock_target_df is None or stock_target_df.shape[0] == 0:
+            log.warning("目标股票列表为空，无需监控")
+            return
+        try:
+            stock_target_dic = stock_target_df.T.to_dict()
+            while self.monitor_running:
+                for n_stock, (stock_code, data_dic) in enumerate(stock_target_dic.items()):
+                    offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+                    price = data_dic['ref_price'] if math.isnan(offer_sell_list[0][0]) else offer_sell_list[0][0]
+                    data_dic["cur_price"] = price
+                stock_target_cur_df = pd.DataFrame(stock_target_dic).T
+                stock_target_cur_df['当日涨跌幅'] = (stock_target_cur_df['cur_price'] - stock_target_cur_df['ref_price']) / stock_target_cur_df['ref_price']
+                rr_percent = ((stock_target_cur_df['当日涨跌幅'] * stock_target_cur_df['final_position']) / stock_target_cur_df['final_position'].sum()).sum() * 100
+                data_df_4_shown = stock_target_cur_df[['final_position', 'ref_price', 'cur_price', '当日涨跌幅']].rename(columns={
+                    "final_position": "目标仓位",
+                    "ref_price": "参考价格",
+                    "cur_price": "当前价格",
+                })
+                data_df_4_shown['当日涨跌幅'] = data_df_4_shown['当日涨跌幅'].apply(lambda x: "%.2f%%" % (x * 100))
+
+                log.info("当日组合涨跌幅 %+.2f%% 各个股票涨跌幅\n%s\n输入任意字符回车后退出监控",
+                         rr_percent, data_df_4_shown)
+
+                if warning_line != 0 and rr_percent <= warning_line:
+                    warning_line_str = "↓" * 30
+                    log.warning("到达预警线")
+                    cprint("↓" * 30, 'green')
+                    cprint("↑" * 30, 'red')
+                    winsound.Beep(600, 1000)
+
+                time.sleep(second_interval)
+        except:
+            log.exception("监控程序执行异常，已经退出")
