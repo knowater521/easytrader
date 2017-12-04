@@ -13,6 +13,7 @@ import logging
 import pandas as pd
 from collections import OrderedDict
 from easytrader.log import log
+from threading import Thread
 
 
 def load_stock_order():
@@ -105,6 +106,7 @@ def main(config_path, use, debug=False):
         (7, '全部撤单'),
         (8, '执行一次买/卖操作'),
         (9, '全部对手价下单'),
+        (10, '监控投资组合收益变化'),
     ])
     while True:
         for command_num_desc in command_num_desc_dic.items():
@@ -184,6 +186,29 @@ def main(config_path, use, debug=False):
                               'aggregate_auction': False, 'once': True, 'final_deal': False,
                               'side': 0, 'keep_wap_mode': 'twap_initiative'}
                     user.auto_order(stock_target_df, config)
+            elif command_num == 10:
+                log.info(command_num_desc_dic[command_num])
+                @click.command()
+                @click.option('--second_interval', type=click.INT, prompt="执行间隔时长(秒)", default=60)
+                @click.option('--warning_line', type=click.FLOAT, prompt="预警线(%)", default=0)
+                @click.option('--yes', is_flag=True, callback=abort_if_false, expose_value=True, default=True,
+                              prompt='确认开始执行')
+                def run_monitor(**kwargs):
+                    user.monitor_running = True
+                    # user.monitor_md(stock_target_df)
+                    second_interval = kwargs.setdefault('second_interval', 60)
+                    warning_line = kwargs.setdefault('warning_line', 0)
+                    thread = Thread(target=user.monitor_md, name="monitor_md",
+                                    args=(stock_target_df, second_interval, warning_line),
+                                    daemon=True)
+                    thread.start()
+                    input_str = input("输入任意字符回车后退出监控退出")
+                    if len(input_str) > 0:
+                        user.monitor_running = False
+                        thread.join(1)
+                        log.info("退出监控程序")
+                run_monitor(standalone_mode=False)
+
             else:
                 log.warning('未知命令')
         except click.exceptions.Abort:
