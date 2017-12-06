@@ -24,6 +24,7 @@ from .log import log
 from win32_utils import find_window_whnd, filter_hwnd_func
 from mass_utils import get_min_move_unit
 from termcolor import cprint
+import tushare as ts
 
 # 仅用于调试阶段，防止价格成交，进行买卖价格偏移使用
 SHIFT_PRICE = 0.0
@@ -1917,10 +1918,19 @@ class GZZQClientTrader():
         try:
             stock_target_dic = stock_target_df.T.to_dict()
             while self.monitor_running:
+                # 通过 tushare 获取行情数据
+                stock_code_list = list(stock_target_dic.keys())
+                bs_df = ts.get_realtime_quotes(stock_code_list)
+                bs_df.set_index('code', inplace=True)
                 for n_stock, (stock_code, data_dic) in enumerate(stock_target_dic.items()):
-                    offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
-                    price = data_dic['ref_price'] if math.isnan(offer_sell_list[0][0]) else offer_sell_list[0][0]
+                    sell_price = float(bs_df['ask'][stock_code])
+                    price = data_dic['ref_price'] if math.isnan(sell_price) else sell_price
                     data_dic["cur_price"] = price
+                # 通过交易软件获取行情数据
+                # for n_stock, (stock_code, data_dic) in enumerate(stock_target_dic.items()):
+                #     offer_buy_list, offer_sell_list = self.get_bs_offer_data(stock_code)
+                #     price = data_dic['ref_price'] if math.isnan(offer_sell_list[0][0]) else offer_sell_list[0][0]
+                #     data_dic["cur_price"] = price
                 stock_target_cur_df = pd.DataFrame(stock_target_dic).T
                 stock_target_cur_df['当日涨跌幅'] = (stock_target_cur_df['cur_price'] - stock_target_cur_df['ref_price']) / stock_target_cur_df['ref_price']
                 rr_percent = ((stock_target_cur_df['当日涨跌幅'] * stock_target_cur_df['final_position']) / stock_target_cur_df['final_position'].sum()).sum() * 100
