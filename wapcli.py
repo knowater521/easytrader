@@ -190,14 +190,18 @@ def main(config_path, use, debug=False):
                 log.info(command_num_desc_dic[command_num])
                 @click.command()
                 @click.option('--second_interval', type=click.INT, prompt="执行间隔时长(秒)", default=60)
-                @click.option('--warning_line', type=click.FLOAT, prompt="预警线(%)", default=0)
+                @click.option('--drawback_last', type=click.FLOAT, prompt="上个统计日累计回撤(%)", default=0)
+                @click.option('--drawback_target', type=click.FLOAT, prompt="总体目标回撤(%)", default=0)
                 @click.option('--yes', is_flag=True, callback=abort_if_false, expose_value=True, default=True,
                               prompt='确认开始执行')
                 def run_monitor(**kwargs):
                     user.monitor_running = True
                     # user.monitor_md(stock_target_df)
                     second_interval = kwargs.setdefault('second_interval', 60)
-                    warning_line = kwargs.setdefault('warning_line', 0)
+                    drawback_last = kwargs.setdefault('drawback_last', 0)
+                    drawback_target = kwargs.setdefault('drawback_target', 0)
+                    warning_line = drawback_target - drawback_last
+                    log.info("当前组合目标回撤：%.2f%%", warning_line)
                     thread = Thread(target=user.monitor_md, name="monitor_md",
                                     args=(stock_target_df, second_interval, warning_line),
                                     daemon=True)
