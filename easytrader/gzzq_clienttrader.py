@@ -1924,6 +1924,10 @@ class GZZQClientTrader():
                 bs_df.set_index('code', inplace=True)
                 for n_stock, (stock_code, data_dic) in enumerate(stock_target_dic.items()):
                     sell_price = float(bs_df['ask'][stock_code])
+                    if sell_price == 0:
+                        price_df = ts.get_k_data(stock_code)
+                        if price_df is not None or price_df.shape[0] > 0:
+                            sell_price = price_df['close'].iloc[-1]
                     price = data_dic['ref_price'] if math.isnan(sell_price) else sell_price
                     data_dic["cur_price"] = price
                 # 通过交易软件获取行情数据
