@@ -11,7 +11,8 @@ import requests
 
 from . import helpers
 from .log import log
-from .webtrader import WebTrader, NotLoginError
+from .webtrader import WebTrader
+from easytrader.exceptions import NotLoginError
 
 VERIFY_CODE_POS = 0
 TRADE_MARKET = 1
