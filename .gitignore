@@ -1,7 +1,3 @@
-yjb_account.json
-htt.json
-gft.json
-gzzq.json
 test.py
 ht_account.json
 .idea
@@ -73,4 +69,4 @@ tmp/
 auto_order_dir/*
 secrets/
 *.csv
-
+json/*
