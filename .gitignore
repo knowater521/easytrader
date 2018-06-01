@@ -69,4 +69,4 @@ tmp/
 auto_order_dir/*
 secrets/
 *.csv
-json/*
+/json/
