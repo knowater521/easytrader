@@ -10,9 +10,6 @@ from .xqtrader import XueQiuTrader
 if six.PY2:
     raise TypeError('不支持 Python2，请升级 Python3 ')
 from .yhtrader import YHTrader
-from .xczqtrader import XCZQTrader
-from .yhtrader import YHTrader
-# from .xczqtrader import XCZQTrader
 
 
 def use(broker, debug=True, **kwargs):
@@ -37,8 +34,6 @@ def use(broker, debug=True, **kwargs):
     elif broker.lower() in ['yh_client', '银河客户端']:
         from .yh_clienttrader import YHClientTrader
         return YHClientTrader()
-    # elif broker.lower() in ['xczq', '湘财证券']:
-    #     return XCZQTrader()
     elif broker.lower() in ['ht_client', '恒泰客户端']:
         from .htzq_clienttrader import HTZQClientTrader
         return HTZQClientTrader()
@@ -54,8 +49,6 @@ def use(broker, debug=True, **kwargs):
     elif broker.lower() in ['ths', '同花顺客户端']:
         from .clienttrader import ClientTrader
         return ClientTrader()
-    elif broker.lower() in ['xczq', '湘财证券']:
-        return XCZQTrader()
     elif broker.lower() in ['ht_client', '恒泰客户端']:
         from .htzq_clienttrader import HTZQClientTrader
         return HTZQClientTrader()
