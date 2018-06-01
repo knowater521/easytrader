@@ -23,6 +23,7 @@
 
 ![](http://7xqo8v.com1.z0.glb.clouddn.com/easy_quant_qrcode.jpg?imageView2/1/w/300/h/300)
 
+* 支持 Python3 / Python2, Linux / Win, 推荐使用 `Python3`
 
 **开发环境** : `Ubuntu 16.04` / `Python 3.5`
 
@@ -31,6 +32,7 @@
 [获取新浪免费实时行情的类库: easyquotation](https://github.com/shidenggui/easyquotation)
 
 [简单的股票量化交易框架 使用 easytrader 和 easyquotation](https://github.com/shidenggui/easyquant)
+
 
 ### 支持券商（同花顺内核）
 
@@ -45,6 +47,10 @@
 ### 实盘易
 
 如果有对其他券商或者通达信版本的需求，可以查看 [实盘易](http://www.iguuu.com/e?x=19828)
+
+
+### 支持券商（同花顺内核）
+
 * 银河
 * 广发
 * 银河客户端(支持自动登陆), 须在 `windows` 平台下载 `银河双子星` 客户端

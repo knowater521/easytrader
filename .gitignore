@@ -72,5 +72,5 @@ target/
 tmp/
 auto_order_dir/*
 secrets/
-gzzq.json
 *.csv
+
